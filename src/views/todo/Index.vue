@@ -14,6 +14,7 @@ import {
 import dayjs from 'dayjs'
 import {
   getTodoList,
+  getTodoPage,
   addTodo,
   updateTodo,
   deleteTodo,
@@ -27,6 +28,17 @@ const dataList = ref<Todo[]>([])
 const searchKeyword = ref('')
 const priorityFilter = ref<string | undefined>(undefined)
 const categoryFilter = ref<string | undefined>(undefined)
+
+// 分页
+const hasSearch = computed(() => searchKeyword.value || priorityFilter.value || categoryFilter.value)
+const pagination = reactive({
+  current: 1,
+  pageSize: 10,
+  total: 0,
+  showSizeChanger: true,
+  showTotal: (t: number) => `共 ${t} 条`,
+  pageSizeOptions: ['10', '20', '50', '100']
+})
 
 const priorityOptions = [
   { label: '全部', value: '' },
@@ -63,14 +75,20 @@ const categoryTextMap: Record<string, string> = {
 }
 
 const filteredList = computed(() => {
-  return dataList.value.filter((item) => {
-    const matchKeyword =
-      !searchKeyword.value ||
-      item.title.toLowerCase().includes(searchKeyword.value.toLowerCase())
-    const matchPriority = !priorityFilter.value || item.priority === priorityFilter.value
-    const matchCategory = !categoryFilter.value || item.category === categoryFilter.value
-    return matchKeyword && matchPriority && matchCategory
-  })
+  if (hasSearch.value) {
+    const filtered = dataList.value.filter((item) => {
+      const matchKeyword =
+        !searchKeyword.value ||
+        item.title.toLowerCase().includes(searchKeyword.value.toLowerCase())
+      const matchPriority = !priorityFilter.value || item.priority === priorityFilter.value
+      const matchCategory = !categoryFilter.value || item.category === categoryFilter.value
+      return matchKeyword && matchPriority && matchCategory
+    })
+    pagination.total = filtered.length
+    const start = (pagination.current - 1) * pagination.pageSize
+    return filtered.slice(start, start + pagination.pageSize)
+  }
+  return dataList.value
 })
 
 const columns: TableColumnsType = [
@@ -199,6 +217,7 @@ const handleSubmit = async () => {
     } else {
       await addTodo({ ...form })
       message.success('添加成功')
+      pagination.current = 1
     }
     modalVisible.value = false
     await fetchData()
@@ -243,14 +262,42 @@ const handleToggle = async (record: Todo) => {
 const fetchData = async () => {
   loading.value = true
   try {
-    const res: any = await getTodoList()
-    dataList.value = Array.isArray(res) ? res : (res?.records ?? [])
+    if (hasSearch.value) {
+      // 搜索模式：全量加载 + 前端过滤分页
+      const res: any = await getTodoList()
+      dataList.value = Array.isArray(res) ? res : (res?.records ?? [])
+    } else {
+      // 后端分页
+      const res: any = await getTodoPage({ current: pagination.current, size: pagination.pageSize })
+      dataList.value = (res && res.records) || []
+      pagination.total = Number((res && res.total) || 0)
+    }
   } catch {
-    // 错误已在拦截器提示
     dataList.value = []
   } finally {
     loading.value = false
   }
+}
+
+const onTableChange = (pag: any) => {
+  pagination.current = pag.current
+  pagination.pageSize = pag.pageSize
+  if (!hasSearch.value) {
+    fetchData()
+  }
+}
+
+const doSearch = () => {
+  pagination.current = 1
+  fetchData()
+}
+
+const resetFilters = () => {
+  searchKeyword.value = ''
+  priorityFilter.value = undefined
+  categoryFilter.value = undefined
+  pagination.current = 1
+  fetchData()
 }
 
 const formatDeadline = (date?: string) => {
@@ -280,6 +327,7 @@ onMounted(() => {
           placeholder="搜索任务标题"
           allow-clear
           style="width: 220px"
+          @press-enter="doSearch"
         >
           <template #prefix>
             <SearchOutlined />
@@ -291,6 +339,7 @@ onMounted(() => {
           allow-clear
           style="width: 130px"
           :options="priorityOptions"
+          @change="doSearch"
         />
         <a-select
           v-model:value="categoryFilter"
@@ -298,7 +347,9 @@ onMounted(() => {
           allow-clear
           style="width: 130px"
           :options="categoryOptions"
+          @change="doSearch"
         />
+        <a-button @click="resetFilters">重置</a-button>
       </div>
       <div class="toolbar-right">
         <a-button @click="fetchData">
@@ -318,8 +369,9 @@ onMounted(() => {
       :data-source="filteredList"
       :loading="loading"
       row-key="id"
-      :pagination="{ pageSize: 10, showSizeChanger: true, showTotal: (t: number) => `共 ${t} 条` }"
+      :pagination="pagination"
       :scroll="{ x: 960 }"
+      @change="onTableChange"
     >
       <template #bodyCell="{ column, record }">
         <!-- 优先级 -->
@@ -457,6 +509,8 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  flex: 1;
+  min-height: 0;
 }
 
 .toolbar {

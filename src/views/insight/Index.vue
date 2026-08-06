@@ -299,7 +299,7 @@ const expenseEntries = computed(() => Object.entries(data.value?.moneyStats?.exp
 </template>
 
 <style scoped>
-.insight-page { display:flex; flex-direction:column; gap:16px; }
+.insight-page { display:flex; flex-direction:column; gap:16px; flex:1; min-height:0; overflow-y:auto; }
 .page-header {
   display:flex; justify-content:space-between; align-items:center;
   background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);

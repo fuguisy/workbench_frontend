@@ -982,7 +982,7 @@ const oneClickSetup = async () => {
 </template>
 
 <style scoped>
-.settings-page { display: flex; flex-direction: column; gap: 16px; }
+.settings-page { display: flex; flex-direction: column; gap: 16px; flex: 1; min-height: 0; overflow-y: auto; }
 
 .page-header {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);

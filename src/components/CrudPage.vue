@@ -59,11 +59,43 @@ const searchParams = reactive<Record<string, any>>({})
 
 const form = reactive<Record<string, any>>({})
 
+// ====== 分页 ======
+// 是否有搜索条件：有则回退全量加载+前端过滤+前端分页；无则后端分页
+const hasSearch = computed(() => {
+  if (!props.config.searchFields) return false
+  return props.config.searchFields.some(f => searchParams[f.key])
+})
+const pagination = reactive({
+  current: 1,
+  pageSize: 10,
+  total: 0,
+  showSizeChanger: true,
+  showTotal: (t: number) => `共 ${t} 条`,
+  pageSizeOptions: ['10', '20', '50', '100']
+})
+
 const loadData = async () => {
   loading.value = true
   try {
-    const res = await props.config.api.list()
-    dataList.value = res || []
+    if (hasSearch.value) {
+      // 搜索模式：全量加载 + 前端过滤 + 前端分页
+      const res = await props.config.api.list()
+      const all = res || []
+      dataList.value = all.filter((item: any) => {
+        return props.config.searchFields!.every((field) => {
+          const val = searchParams[field.key]
+          if (!val) return true
+          const itemVal = String(item[field.key] || '').toLowerCase()
+          return itemVal.includes(String(val).toLowerCase())
+        })
+      })
+      pagination.total = dataList.value.length
+    } else {
+      // 后端分页
+      const res: any = await props.config.api.page({ current: pagination.current, size: pagination.pageSize })
+      dataList.value = (res && res.records) || []
+      pagination.total = Number((res && res.total) || 0)
+    }
   } catch (e) {
     // error handled by interceptor
   } finally {
@@ -71,17 +103,27 @@ const loadData = async () => {
   }
 }
 
+// 搜索模式下前端切片；后端分页模式下直接返回 dataList
 const filteredData = computed(() => {
-  if (!props.config.searchFields) return dataList.value
-  return dataList.value.filter((item: any) => {
-    return props.config.searchFields!.every((field) => {
-      const val = searchParams[field.key]
-      if (!val) return true
-      const itemVal = String(item[field.key] || '').toLowerCase()
-      return itemVal.includes(String(val).toLowerCase())
-    })
-  })
+  if (hasSearch.value) {
+    const start = (pagination.current - 1) * pagination.pageSize
+    return dataList.value.slice(start, start + pagination.pageSize)
+  }
+  return dataList.value
 })
+
+const onTableChange = (pag: any) => {
+  pagination.current = pag.current
+  pagination.pageSize = pag.pageSize
+  if (!hasSearch.value) {
+    loadData()
+  }
+}
+
+const doSearch = () => {
+  pagination.current = 1
+  loadData()
+}
 
 const resetSearch = () => {
   if (props.config.searchFields) {
@@ -89,6 +131,7 @@ const resetSearch = () => {
       searchParams[f.key] = ''
     })
   }
+  pagination.current = 1
   loadData()
 }
 
@@ -119,6 +162,7 @@ const handleOk = async () => {
     } else {
       await props.config.api.add({ ...form })
       message.success('新增成功')
+      pagination.current = 1
     }
     modalVisible.value = false
     loadData()
@@ -172,7 +216,7 @@ defineExpose({ loadData })
         </a-col>
         <a-col :span="6">
           <a-space>
-            <a-button type="primary" @click="loadData"><SearchOutlined /> 搜索</a-button>
+            <a-button type="primary" @click="doSearch"><SearchOutlined /> 搜索</a-button>
             <a-button @click="resetSearch">重置</a-button>
           </a-space>
         </a-col>
@@ -191,8 +235,9 @@ defineExpose({ loadData })
       :data-source="filteredData"
       :loading="loading"
       row-key="id"
-      :pagination="{ pageSize: 10, showSizeChanger: true, showTotal: (t: number) => `共 ${t} 条` }"
+      :pagination="pagination"
       :scroll="{ x: 'max-content' }"
+      @change="onTableChange"
     >
       <template #bodyCell="{ column, record, index }">
         <template v-if="column.dataIndex === 'action'">
@@ -245,8 +290,11 @@ defineExpose({ loadData })
   display: flex;
   flex-direction: column;
   gap: 16px;
+  flex: 1;
+  min-height: 0;
 }
 .search-bar {
+  flex-shrink: 0;
   background: var(--color-bg-card, #fff);
   padding: 16px;
   border-radius: 8px;

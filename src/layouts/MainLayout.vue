@@ -70,7 +70,7 @@ const devMenus = [
   { key: '/svc', icon: CloudServerOutlined, label: '服务器' },
   { key: '/read', icon: ReadOutlined, label: '学习阅读' },
   { key: '/tech', icon: FileTextOutlined, label: '技术笔记' },
-  { key: '/markdown', icon: FileMarkdownOutlined, label: 'Markdown文档' },
+  { key: '/markdown', icon: FileMarkdownOutlined, label: '文档管理' },
 ]
 
 // AI 模块
@@ -453,7 +453,9 @@ onMounted(async () => {
   padding: 20px;
   background: var(--color-bg);
   border-radius: 8px;
-  overflow: auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .fade-enter-active,

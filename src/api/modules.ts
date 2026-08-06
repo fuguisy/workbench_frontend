@@ -224,6 +224,30 @@ export const mediaApi = createCrud<Media>('/media')
 export const mediaBoardApi = createCrud<MediaBoard>('/media-board')
 export const docsApi = createCrud<Docs>('/docs')
 export const checkinApi = createCrud<Checkin>('/checkin')
+
+// 习惯打卡面板扩展接口
+export interface HabitPanelItem extends Checkin {
+  todayDone: boolean
+  streak: number
+  totalCount: number
+}
+export interface PanelStats {
+  total: number
+  done: number
+  pending: number
+  rate: number
+  maxStreak: number
+}
+export interface PanelData {
+  habits: HabitPanelItem[]
+  stats: PanelStats
+}
+export const checkinPanelApi = {
+  panel: () => request.get<any, PanelData>('/checkin/panel'),
+  punch: (habitId: number) => request.post<any, boolean>(`/checkin/punch/${habitId}`),
+  monthDates: (habitId: number, year: number, month: number) =>
+    request.get<any, string[]>(`/checkin/month-dates/${habitId}`, { params: { year, month } })
+}
 export const secretsApi = createCrud<Secrets>('/secrets')
 export const backupApi = createCrud<BackupLog>('/backup')
 export const moneyApi = createCrud<Money>('/money')
@@ -296,4 +320,32 @@ export interface InsightStatsVO {
 export const statsApi = {
   dashboard: () => request.get<any, DashboardStatsVO>('/stats/dashboard'),
   insight: () => request.get<any, InsightStatsVO>('/stats/insight')
+}
+
+// 文档分类树
+export interface DocCategory {
+  id?: number
+  userId?: number
+  parentId?: number
+  name: string
+  sort?: number
+  createTime?: string
+  updateTime?: string
+}
+export interface CategoryTreeNode {
+  key: string
+  title: string
+  id: number
+  parentId: number
+  sort?: number
+  children?: CategoryTreeNode[]
+}
+export const docCategoryApi = {
+  tree: () => request.get<any, CategoryTreeNode[]>('/doc-category/tree'),
+  list: () => request.get<any, DocCategory[]>('/doc-category/list'),
+  add: (parentId: number, name: string) =>
+    request.post<any, DocCategory>('/doc-category', { parentId, name }),
+  rename: (id: number, name: string) =>
+    request.put<any, void>(`/doc-category/${id}`, { name }),
+  remove: (id: number) => request.delete<any, void>(`/doc-category/${id}`)
 }
