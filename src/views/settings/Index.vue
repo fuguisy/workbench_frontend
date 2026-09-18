@@ -21,13 +21,16 @@ import {
 import * as apis from '@/api/modules'
 import * as feishuApi from '@/api/feishu'
 import type { FieldSchema } from '@/api/feishu'
+import { useAppStore } from '@/stores/app'
 export type { FieldSchema }
+
+const appStore = useAppStore()
 
 const activeTab = ref('appearance')
 
-// ============= 1. 基础外观 =============
+// ============= 1. 基础外观（与 appStore 打通，立即生效） =============
 const appearanceForm = reactive({
-  theme: localStorage.getItem('wb-theme') || 'light',
+  theme: appStore.theme,
   primaryColor: localStorage.getItem('wb-primary') || '#1677ff',
   layoutWidth: localStorage.getItem('wb-width') || '1680',
   modalWide: localStorage.getItem('wb-modal-wide') === 'true'
@@ -35,8 +38,7 @@ const appearanceForm = reactive({
 
 const themeOptions = [
   { label: '☀️ 亮色', value: 'light' },
-  { label: '🌙 暗色', value: 'dark' },
-  { label: '🌿 护眼绿', value: 'green' }
+  { label: '🌙 暗色', value: 'dark' }
 ]
 
 const widthOptions = [
@@ -47,12 +49,14 @@ const widthOptions = [
 ]
 
 const saveAppearance = () => {
-  localStorage.setItem('wb-theme', appearanceForm.theme)
+  // 主题通过 appStore 立即生效（响应式 + watch 持久化）
+  appStore.theme = appearanceForm.theme as 'dark' | 'light'
   localStorage.setItem('wb-primary', appearanceForm.primaryColor)
   localStorage.setItem('wb-width', appearanceForm.layoutWidth)
   localStorage.setItem('wb-modal-wide', String(appearanceForm.modalWide))
-  document.documentElement.setAttribute('data-theme', appearanceForm.theme)
-  message.success('外观设置已保存，刷新页面生效')
+  // 主色调写入 CSS 变量
+  document.documentElement.style.setProperty('--color-primary', appearanceForm.primaryColor)
+  message.success('外观设置已保存并立即生效')
 }
 
 // ============= 2. 自定义路径 =============
@@ -167,17 +171,15 @@ const onImportFile = (e: Event) => {
 // ============= 4. 菜单与显示 =============
 const menuConfig = reactive({
   showDev: localStorage.getItem('wb-menu-dev') !== 'false',
-  showAi: localStorage.getItem('wb-menu-ai') !== 'false',
   showMedia: localStorage.getItem('wb-menu-media') !== 'false',
-  showStats: localStorage.getItem('wb-menu-stats') !== 'false',
+  showPersonal: localStorage.getItem('wb-menu-personal') !== 'false',
   showSystem: localStorage.getItem('wb-menu-system') !== 'false'
 })
 
 const saveMenuConfig = () => {
   localStorage.setItem('wb-menu-dev', String(menuConfig.showDev))
-  localStorage.setItem('wb-menu-ai', String(menuConfig.showAi))
   localStorage.setItem('wb-menu-media', String(menuConfig.showMedia))
-  localStorage.setItem('wb-menu-stats', String(menuConfig.showStats))
+  localStorage.setItem('wb-menu-personal', String(menuConfig.showPersonal))
   localStorage.setItem('wb-menu-system', String(menuConfig.showSystem))
   message.success('菜单显示配置已保存，刷新页面生效')
 }
@@ -228,8 +230,9 @@ onMounted(async () => {
       if (Array.isArray(list)) total += list.length
     } catch (e) { /* ignore */ }
   }
-  storageInfo.records = total || Math.floor(Math.random() * 100) + 20
-  storageInfo.used = Math.round(storageInfo.records * 12 * 100) / 100000
+  storageInfo.records = total
+  // 按每条记录约 0.5KB 估算占用空间
+  storageInfo.used = Math.round(total * 0.5 * 100) / 100000
 })
 
 const percent = computed(() => Math.round((storageInfo.used / storageInfo.total) * 10000) / 100)
@@ -347,6 +350,45 @@ const moduleSchemas: Record<string, { label: string; fields: FieldSchema[]; tabl
       { fieldName: '字数', type: 2 },
       { fieldName: '文件路径', type: 1 },
       { fieldName: '内容', type: 1 },
+      { fieldName: '创建时间', type: 5 }
+    ]
+  },
+  focus: {
+    label: '专注记录',
+    tableName: '专注记录',
+    fields: [
+      { fieldName: '任务标题', type: 1 },
+      { fieldName: '场景', type: 3 },
+      { fieldName: '实际时长(分钟)', type: 2 },
+      { fieldName: '标准时长(分钟)', type: 2 },
+      { fieldName: '状态', type: 3 },
+      { fieldName: '日期', type: 5 },
+      { fieldName: '关联任务', type: 1 }
+    ]
+  },
+  calendar: {
+    label: '日程事件',
+    tableName: '日程事件',
+    fields: [
+      { fieldName: '事件标题', type: 1 },
+      { fieldName: '类型', type: 3 },
+      { fieldName: '开始时间', type: 5 },
+      { fieldName: '结束时间', type: 5 },
+      { fieldName: '地点', type: 1 },
+      { fieldName: '备注', type: 1 },
+      { fieldName: '状态', type: 3 }
+    ]
+  },
+  notification: {
+    label: '通知记录',
+    tableName: '通知记录',
+    fields: [
+      { fieldName: '标题', type: 1 },
+      { fieldName: '类型', type: 3 },
+      { fieldName: '内容', type: 1 },
+      { fieldName: '是否已读', type: 3 },
+      { fieldName: '优先级', type: 2 },
+      { fieldName: '日期', type: 5 },
       { fieldName: '创建时间', type: 5 }
     ]
   }
@@ -504,6 +546,33 @@ const toFeishuRecord = (moduleKey: string, record: any): Record<string, any> => 
       '文件路径': record.filePath || '',
       '内容': record.content || '',
       '创建时间': record.createTime || ''
+    },
+    focus: {
+      '任务标题': record.title || '',
+      '场景': record.scene || '',
+      '实际时长(分钟)': Number(record.minutesActual || 0),
+      '标准时长(分钟)': Number(record.minutesStandard || 0),
+      '状态': record.status || 'DOING',
+      '日期': record.recordDate || '',
+      '关联任务': record.taskId ? `任务#${record.taskId}` : ''
+    },
+    calendar: {
+      '事件标题': record.title || '',
+      '类型': record.type || '工作',
+      '开始时间': record.startTime || '',
+      '结束时间': record.endTime || '',
+      '地点': record.location || '',
+      '备注': record.note || '',
+      '状态': record.status || '待办'
+    },
+    notification: {
+      '标题': record.title || '',
+      '类型': record.type || 'SYSTEM',
+      '内容': record.content || '',
+      '是否已读': record.read ? '已读' : '未读',
+      '优先级': Number(record.priority || 0),
+      '日期': record.date || '',
+      '创建时间': record.createTime || ''
     }
   }
   return map[moduleKey] || {}
@@ -528,7 +597,10 @@ const syncModule = async () => {
     checkin: (apis as any).checkinApi,
     read: (apis as any).readApi,
     tech: (apis as any).techApi,
-    markdown: (apis as any).markdownApi
+    markdown: (apis as any).markdownApi,
+    focus: (apis as any).focusApi,
+    calendar: (apis as any).calendarApi,
+    notification: (apis as any).notificationApi
   }
   const api = apiMap[selectedModule.value]
   if (!api?.list) {
@@ -575,7 +647,10 @@ const oneClickSetup = async () => {
     checkin: (apis as any).checkinApi,
     read: (apis as any).readApi,
     tech: (apis as any).techApi,
-    markdown: (apis as any).markdownApi
+    markdown: (apis as any).markdownApi,
+    focus: (apis as any).focusApi,
+    calendar: (apis as any).calendarApi,
+    notification: (apis as any).notificationApi
   }
   feishuLoading.value = true
   addLog('🌟 启动飞书一键初始化流程...', 'info')
@@ -635,6 +710,64 @@ const oneClickSetup = async () => {
   } finally {
     feishuLoading.value = false
   }
+}
+
+// 同步状态统计
+const syncStats = computed(() => {
+  const total = Object.keys(moduleSchemas).length
+  const created = Object.keys(tableIdMap).filter(k => tableIdMap[k]).length
+  return { total, created }
+})
+
+// 仅同步已建表的数据（不建新表）
+const syncAllData = async () => {
+  if (!appToken.value) {
+    message.warning('请先创建或填入多维表格 appToken')
+    return
+  }
+  const apiMap: Record<string, any> = {
+    todo: (apis as any).todoApi,
+    project: (apis as any).projectApi,
+    bugs: (apis as any).bugsApi,
+    idea: (apis as any).ideaApi,
+    money: (apis as any).moneyApi,
+    checkin: (apis as any).checkinApi,
+    read: (apis as any).readApi,
+    tech: (apis as any).techApi,
+    markdown: (apis as any).markdownApi,
+    focus: (apis as any).focusApi,
+    calendar: (apis as any).calendarApi,
+    notification: (apis as any).notificationApi
+  }
+  const modules = Object.keys(moduleSchemas) as (keyof typeof moduleSchemas)[]
+  feishuLoading.value = true
+  addLog('🔄 开始同步所有已建表模块数据...', 'info')
+  let successCount = 0
+  let totalRecords = 0
+  for (const mk of modules) {
+    const schema = moduleSchemas[mk]
+    const tid = tableIdMap[mk]
+    const api = apiMap[mk]
+    if (!api?.list || !tid) continue
+    addLog(`  → 同步【${schema.label}】...`, 'info')
+    try {
+      const list = await api.list()
+      const records = (Array.isArray(list) ? list : []).map((r: any) => toFeishuRecord(mk, r))
+      if (records.length === 0) {
+        addLog(`  ↳ 【${schema.label}】无数据，跳过`, 'info')
+        continue
+      }
+      await feishuApi.syncData({ appToken: appToken.value, tableId: tid, records })
+      addLog(`  ↳ ✅ ${schema.label}：${records.length} 条`, 'success')
+      successCount++
+      totalRecords += records.length
+    } catch (e: any) {
+      addLog(`  ↳ ❌ ${schema.label}失败：` + (e?.message || ''), 'error')
+    }
+  }
+  addLog(`🎉 同步完成：${successCount} 个模块，共 ${totalRecords} 条记录`, 'success')
+  message.success(`同步完成（${successCount}模块 / ${totalRecords}条）`)
+  feishuLoading.value = false
 }
 </script>
 
@@ -761,37 +894,31 @@ const oneClickSetup = async () => {
       <a-tab-pane key="menu">
         <template #tab><OrderedListOutlined /> 菜单与显示</template>
         <a-card class="setting-card" :bordered="false">
-          <p class="section-desc">根据个人习惯隐藏不常用的侧边栏分组；隐藏后对应页面仍可通过地址栏直接访问。</p>
+          <p class="section-desc">根据个人习惯隐藏不常用的侧边栏分组；隐藏后对应页面仍可通过地址栏直接访问。工作台和效率分组始终显示。</p>
           <a-form layout="vertical">
             <a-row :gutter="16">
               <a-col :xs="24" :md="12">
                 <a-form-item>
                   <a-switch v-model:checked="menuConfig.showDev" checked-children="显示" un-checked-children="隐藏" />
-                  <span class="switch-label">💻 程序员分组（任务/项目/Bug/代码/服务器/阅读/技术）</span>
-                </a-form-item>
-              </a-col>
-              <a-col :xs="24" :md="12">
-                <a-form-item>
-                  <a-switch v-model:checked="menuConfig.showAi" checked-children="显示" un-checked-children="隐藏" />
-                  <span class="switch-label">🤖 AI分组（AI实验室/内容灵感）</span>
+                  <span class="switch-label">💻 程序员分组（代码仓库 / AI实验室 / 命令面板）</span>
                 </a-form-item>
               </a-col>
               <a-col :xs="24" :md="12">
                 <a-form-item>
                   <a-switch v-model:checked="menuConfig.showMedia" checked-children="显示" un-checked-children="隐藏" />
-                  <span class="switch-label">🎬 自媒体分组（素材/看板/稿件/打卡/密码/备份/记账）</span>
+                  <span class="switch-label">🎬 自媒体分组（自媒体看板 / 素材库 / 创作稿件库）</span>
                 </a-form-item>
               </a-col>
               <a-col :xs="24" :md="12">
                 <a-form-item>
-                  <a-switch v-model:checked="menuConfig.showStats" checked-children="显示" un-checked-children="隐藏" />
-                  <span class="switch-label">📊 统计分组（洞察复盘）</span>
+                  <a-switch v-model:checked="menuConfig.showPersonal" checked-children="显示" un-checked-children="隐藏" />
+                  <span class="switch-label">📚 知识与个人分组（知识库 / 习惯打卡 / 收支记账 / 订阅账单）</span>
                 </a-form-item>
               </a-col>
               <a-col :xs="24" :md="12">
                 <a-form-item>
                   <a-switch v-model:checked="menuConfig.showSystem" checked-children="显示" un-checked-children="隐藏" />
-                  <span class="switch-label">⚙️ 系统分组（工作台设置）</span>
+                  <span class="switch-label">⚙️ 系统分组（密码管理 / 文件备份 / 洞察复盘 / 工作台设置）</span>
                 </a-form-item>
               </a-col>
             </a-row>
@@ -924,7 +1051,15 @@ const oneClickSetup = async () => {
             <a-button type="primary" danger ghost :loading="feishuLoading" @click="oneClickSetup">
               <RocketOutlined /> 🚀 一键初始化（建 Base + 建所有表 + 同步数据）
             </a-button>
+            <a-button type="primary" ghost :loading="feishuLoading" @click="syncAllData" :disabled="syncStats.created === 0">
+              <SwapOutlined /> 🔄 同步全部已建表数据（{{ syncStats.created }}/{{ syncStats.total }}）
+            </a-button>
           </a-space>
+
+          <div v-if="syncStats.created > 0" class="sync-stats-row">
+            <a-tag color="green">已建表：{{ syncStats.created }} / {{ syncStats.total }}</a-tag>
+            <a-tag color="blue">待建表：{{ syncStats.total - syncStats.created }}</a-tag>
+          </div>
 
           <a-divider />
           <h4 class="block-title">🧩 单模块操作（按需建表 / 同步）</h4>
@@ -994,12 +1129,26 @@ const oneClickSetup = async () => {
 .page-desc { margin: 0; color: rgba(255,255,255,0.85); font-size: 13px; }
 
 .settings-tabs :deep(.ant-tabs-nav) {
-  background: #fff; padding: 0 16px; border-radius: 10px; margin: 0;
+  background: var(--color-bg-card, #fff);
+  padding: 0 16px;
+  border-radius: 10px;
+  margin: 0;
+  border: 1px solid var(--color-border, #f0f0f0);
 }
-.setting-card { border-radius: 10px; box-shadow: 0 1px 4px rgba(0,21,41,0.06); }
+.settings-tabs :deep(.ant-tabs-tab) {
+  color: var(--color-text-secondary, rgba(0,0,0,0.65));
+}
+.settings-tabs :deep(.ant-tabs-tab-active) {
+  color: var(--color-primary, #1677ff);
+}
+.setting-card {
+  border-radius: 10px;
+  box-shadow: 0 1px 4px rgba(0,21,41,0.06);
+  background: var(--color-bg-card, #fff);
+}
 
-.section-desc { color: rgba(0,0,0,0.55); font-size: 13px; margin: 0 0 16px 0; }
-.block-title { font-size: 15px; font-weight: 600; margin: 0 0 12px 0; }
+.section-desc { color: var(--color-text-secondary, rgba(0,0,0,0.55)); font-size: 13px; margin: 0 0 16px 0; }
+.block-title { font-size: 15px; font-weight: 600; margin: 0 0 12px 0; color: var(--color-text, rgba(0,0,0,0.85)); }
 
 .color-row { display: flex; gap: 10px; align-items: center; }
 .color-dot {
@@ -1011,16 +1160,16 @@ const oneClickSetup = async () => {
   box-shadow: 0 0 0 2px rgba(0,0,0,0.15);
 }
 
-.switch-label { margin-left: 10px; font-size: 14px; color: rgba(0,0,0,0.85); }
-.import-block { background: #fafafa; padding: 16px; border-radius: 8px; }
+.switch-label { margin-left: 10px; font-size: 14px; color: var(--color-text, rgba(0,0,0,0.85)); }
+.import-block { background: var(--color-bg-soft, #fafafa); padding: 16px; border-radius: 8px; }
 
 .storage-bar-wrap { margin-top: 8px; }
 .storage-text {
   display: flex; justify-content: space-between;
-  font-size: 13px; color: rgba(0,0,0,0.65); margin-bottom: 8px;
+  font-size: 13px; color: var(--color-text-secondary, rgba(0,0,0,0.65)); margin-bottom: 8px;
 }
 .storage-bar {
-  width: 100%; height: 10px; background: #f0f0f0;
+  width: 100%; height: 10px; background: var(--color-bg-soft, #f0f0f0);
   border-radius: 5px; overflow: hidden;
 }
 .storage-bar-inner { height: 100%; transition: width 0.3s; border-radius: 5px; }
@@ -1046,4 +1195,8 @@ const oneClickSetup = async () => {
 .log-row.log-success .log-msg { color: #4ade80; }
 .log-row.log-error .log-msg { color: #f87171; }
 .log-row.log-info .log-msg { color: #e2e8f0; }
+
+.sync-stats-row {
+  display: flex; gap: 8px; margin-bottom: 16px;
+}
 </style>

@@ -8,23 +8,23 @@ import {
   FileWordOutlined, FolderOpenOutlined, RocketOutlined,
   PlusOutlined, FolderOutlined, FolderAddOutlined,
   FileAddOutlined, CloseOutlined, ReloadOutlined,
-  CaretRightOutlined
+  CaretRightOutlined, FileDoneOutlined, RiseOutlined,
+  AuditOutlined, ClockCircleOutlined, SearchOutlined,
+  ScheduleOutlined, ReadOutlined
 } from '@ant-design/icons-vue'
 import { message, Modal, Upload, Tag, Tooltip, Input, Empty } from 'ant-design-vue'
+import dayjs from 'dayjs'
 import { markdownApi, docCategoryApi } from '@/api/modules'
 import type { MarkdownDoc, CategoryTreeNode } from '@/api/modules'
 import { useAuthStore } from '@/stores/auth'
 
 const authStore = useAuthStore()
 
-// ========== 分类树（数据库持久化） ==========
-// 后端返回的根节点数组；为统一展示「全部文档」虚拟根，包一层
 const ROOT_KEY = 'root'
 const treeData = ref<CategoryTreeNode[]>([])
 const selectedKeys = ref<string[]>([])
 const expandedKeys = ref<string[]>([])
 
-// 包装成含「全部文档」虚拟根的展示树
 const displayTree = computed<CategoryTreeNode[]>(() => {
   return [{
     key: ROOT_KEY,
@@ -39,7 +39,6 @@ const loadTree = async () => {
   try {
     const res = await docCategoryApi.tree()
     treeData.value = res || []
-    // 默认展开虚拟根
     if (!expandedKeys.value.includes(ROOT_KEY)) {
       expandedKeys.value = [...expandedKeys.value, ROOT_KEY]
     }
@@ -49,7 +48,6 @@ const loadTree = async () => {
   }
 }
 
-// 树右键菜单
 const contextMenu = ref<{ visible: boolean; x: number; y: number; node: CategoryTreeNode | null }>({
   visible: false, x: 0, y: 0, node: null
 })
@@ -58,7 +56,6 @@ const onTreeRightClick = ({ event, node }: { event: MouseEvent; node: any }) => 
 }
 const closeContextMenu = () => { contextMenu.value.visible = false }
 
-// 新增节点
 const newNodeTitle = ref('')
 const addRootNode = () => {
   newNodeTitle.value = ''
@@ -89,7 +86,6 @@ const addChildNode = (parent: CategoryTreeNode) => {
       if (!title) { message.warning('请输入分类名'); return }
       try {
         await docCategoryApi.add(parent.id, title)
-        // 确保父节点展开，子节点才能显示
         if (!expandedKeys.value.includes(parent.key)) {
           expandedKeys.value = [...expandedKeys.value, parent.key]
         }
@@ -120,11 +116,9 @@ const deleteNode = (node: CategoryTreeNode) => {
   })
 }
 
-// 当前选中的分类（从节点 title 取分类名）
 const selectedCategory = computed(() => {
   const key = selectedKeys.value[0]
   if (!key || key === ROOT_KEY) return undefined
-  // key 格式：cat-{id}
   const findNode = (nodes: CategoryTreeNode[]): CategoryTreeNode | undefined => {
     for (const n of nodes) {
       if (n.key === key) return n
@@ -135,33 +129,71 @@ const selectedCategory = computed(() => {
   return findNode(displayTree.value)?.title
 })
 
-// ========== 文档列表 ==========
 const loading = ref(false)
 const dataList = ref<MarkdownDoc[]>([])
 const searchTitle = ref('')
+const selectedTag = ref<string | null>(null)
 
-// 前端分页（每页 20 条）
-const mdPage = ref(1)
-const mdPageSize = 20
+const mdCategoryList = [
+  { key: 'Skill 技能', label: '技能文档', icon: FileMarkdownOutlined, color: '#5E6AD2', bg: 'rgba(94, 106, 210, 0.15)' },
+  { key: '小说', label: '小说创作', icon: FormOutlined, color: '#BF5AF2', bg: 'rgba(191, 90, 242, 0.15)' },
+  { key: '教程', label: '教程笔记', icon: EyeOutlined, color: '#34C759', bg: 'rgba(52, 199, 89, 0.15)' },
+  { key: '技术文档', label: '技术文档', icon: FileTextOutlined, color: '#0A84FF', bg: 'rgba(10, 132, 255, 0.15)' },
+  { key: '读书笔记', label: '读书笔记', icon: ReadOutlined, color: '#FF9F0A', bg: 'rgba(255, 159, 10, 0.15)' },
+  { key: '日记随笔', label: '日记随笔', icon: ScheduleOutlined, color: '#FF375F', bg: 'rgba(255, 55, 95, 0.15)' }
+]
+const mdTagList = ['Markdown', 'Word', 'PDF', 'Excel', 'TXT', '已发布', '草稿']
 
-// 搜索时重置到第 1 页
-watch(searchTitle, () => { mdPage.value = 1 })
+const mdStats = computed(() => {
+  const total = dataList.value.length
+  const now = dayjs()
+  const monthStart = now.startOf('month')
+  const monthNew = dataList.value.filter(r => {
+    const t = r.createTime || r.updateTime
+    return t && dayjs(t).isAfter(monthStart)
+  }).length
+  let totalWords = 0
+  dataList.value.forEach(r => { totalWords += (r.wordCount || 0) })
+  return { total, monthNew, totalWords }
+})
+
+const mdCategoryCounts = computed(() => {
+  const counts: Record<string, number> = {}
+  mdCategoryList.forEach(c => { counts[c.key] = 0 })
+  dataList.value.forEach(r => {
+    const cat = r.category || '其他'
+    if (counts[cat] !== undefined) counts[cat]++
+    else counts['日记随笔'] = (counts['日记随笔'] || 0) + 1
+  })
+  return counts
+})
 
 const filteredData = computed(() => {
-  const filtered = dataList.value.filter(r => {
-    if (searchTitle.value && !r.title?.toLowerCase().includes(searchTitle.value.toLowerCase())) return false
-    if (selectedCategory.value && r.category !== selectedCategory.value) return false
-    return true
-  })
-  const start = (mdPage.value - 1) * mdPageSize
-  return filtered.slice(start, start + mdPageSize)
-})
-const filteredTotal = computed(() => {
   return dataList.value.filter(r => {
     if (searchTitle.value && !r.title?.toLowerCase().includes(searchTitle.value.toLowerCase())) return false
     if (selectedCategory.value && r.category !== selectedCategory.value) return false
+    if (selectedTag.value) {
+      const tag = selectedTag.value
+      const cat = r.category || ''
+      const status = r.status || ''
+      if (tag === 'Markdown' && !(cat.includes('技能') || cat.includes('教程') || cat.includes('技术') || cat.includes('笔记') || cat.includes('随笔'))) return false
+      if (tag === 'Word' && cat !== 'Word') return false
+      if (tag === 'PDF' && cat !== 'PDF') return false
+      if (tag === 'Excel' && cat !== 'Excel') return false
+      if (tag === 'TXT' && cat !== 'TXT') return false
+      if (tag === '已发布' && status !== '已完成') return false
+      if (tag === '草稿' && (status !== '草稿' && status !== '撰写中')) return false
+    }
     return true
-  }).length
+  })
+})
+
+const sortedList = computed(() => {
+  return [...filteredData.value].sort((a, b) => {
+    const ta = a.updateTime || a.createTime || ''
+    const tb = b.updateTime || b.createTime || ''
+    return tb.localeCompare(ta)
+  })
 })
 
 const loadData = async () => {
@@ -169,7 +201,6 @@ const loadData = async () => {
   try {
     const res = await markdownApi.list()
     dataList.value = res || []
-    mdPage.value = 1
   } catch (e: any) {
     message.error(`加载文档失败：${e?.message || e}`)
     dataList.value = []
@@ -181,10 +212,8 @@ onMounted(loadData)
 
 const onTreeSelect = (keys: any) => {
   selectedKeys.value = keys
-  mdPage.value = 1
 }
 
-// ========== 上传 ==========
 const uploadProps = {
   name: 'file',
   multiple: true,
@@ -201,7 +230,36 @@ const uploadProps = {
   }
 }
 
-// ========== 新建/编辑表单 ==========
+const categoryColorMap: Record<string, string> = {
+  'Skill 技能': '#5E6AD2', '小说': '#BF5AF2', '教程': '#34C759',
+  '技术文档': '#0A84FF', '读书笔记': '#FF9F0A', '日记随笔': '#FF375F',
+  'Word': '#FF3B30', 'Excel': '#34C759', 'PDF': '#FF3B30', 'TXT': 'default',
+  '其他': 'default'
+}
+const statusColorMap: Record<string, string> = {
+  '草稿': 'default', '撰写中': 'processing', '已完成': 'success', '已归档': 'warning'
+}
+const categoryIcon: Record<string, any> = {
+  'Skill 技能': FileMarkdownOutlined, '小说': FormOutlined, '教程': EyeOutlined,
+  '技术文档': FileTextOutlined, '读书笔记': EyeOutlined, '日记随笔': FormOutlined,
+  'Word': FileWordOutlined, 'Excel': FileExcelOutlined, 'PDF': FilePdfOutlined,
+  'TXT': FileTextOutlined, '其他': FileTextOutlined
+}
+
+const getAbstract = (r: MarkdownDoc): string => {
+  const text = (r.content || '').replace(/```[\s\S]*?```/g, '').replace(/[#*`>\-]/g, '').trim()
+  return text.length > 120 ? text.substring(0, 120) + '...' : text
+}
+
+const getTimeText = (r: MarkdownDoc): string => {
+  const t = r.updateTime || r.createTime
+  if (!t) return '-'
+  const d = dayjs(t)
+  if (d.isAfter(dayjs().subtract(1, 'day'))) return d.format('今天 HH:mm')
+  if (d.isAfter(dayjs().subtract(7, 'day'))) return d.format('MM-DD HH:mm')
+  return d.format('YYYY-MM-DD')
+}
+
 const formVisible = ref(false)
 const formLoading = ref(false)
 const isEdit = ref(false)
@@ -221,6 +279,16 @@ const categoryOptions = computed(() => {
     }
   }
   walk(displayTree.value)
+  if (!opts.find(o => o.value === 'Skill 技能')) {
+    opts.unshift(
+      { label: 'Skill 技能', value: 'Skill 技能' },
+      { label: '小说', value: '小说' },
+      { label: '教程', value: '教程' },
+      { label: '技术文档', value: '技术文档' },
+      { label: '读书笔记', value: '读书笔记' },
+      { label: '日记随笔', value: '日记随笔' }
+    )
+  }
   return opts
 })
 
@@ -230,21 +298,6 @@ const statusOptions = [
   { label: '已完成', value: '已完成' },
   { label: '已归档', value: '已归档' }
 ]
-const categoryColorMap: Record<string, string> = {
-  'Skill 技能': 'geekblue', '小说': 'magenta', '教程': 'green',
-  '技术文档': 'blue', '读书笔记': 'orange', '日记随笔': 'purple',
-  'Word': 'red', 'Excel': 'green', 'PDF': 'red', 'TXT': 'default',
-  '其他': 'default'
-}
-const statusColorMap: Record<string, string> = {
-  '草稿': 'default', '撰写中': 'processing', '已完成': 'success', '已归档': 'warning'
-}
-const categoryIcon: Record<string, any> = {
-  'Skill 技能': FileMarkdownOutlined, '小说': FormOutlined, '教程': EyeOutlined,
-  '技术文档': FileTextOutlined, '读书笔记': EyeOutlined, '日记随笔': FormOutlined,
-  'Word': FileWordOutlined, 'Excel': FileExcelOutlined, 'PDF': FilePdfOutlined,
-  'TXT': FileTextOutlined, '其他': FileTextOutlined
-}
 
 const openAdd = () => {
   isEdit.value = false
@@ -290,7 +343,6 @@ const handleDelete = (r: MarkdownDoc) => {
   })
 }
 
-// ========== 下载 / 打开外部程序 ==========
 const resolveExt = (cat?: string, path?: string) => {
   if (path) { const i = path.lastIndexOf('.'); if (i >= 0) return path.substring(i) }
   switch (cat) {
@@ -326,7 +378,6 @@ const saveToFile = async (r: MarkdownDoc) => {
   } catch (e: any) { message.error(`保存失败：${e?.message || e}`) }
 }
 
-// ========== 内置 Markdown 编辑器 + 预览 ==========
 const editorVisible = ref(false)
 const editorTitle = ref('')
 const editorContent = ref('')
@@ -409,7 +460,6 @@ const downloadMd = () => {
   document.body.appendChild(a); a.click(); a.remove()
 }
 
-// ========== 选中文档 ==========
 const selectedDoc = ref<MarkdownDoc | null>(null)
 const selectDoc = (r: MarkdownDoc) => { selectedDoc.value = r; openEditor(r) }
 
@@ -418,13 +468,12 @@ onMounted(loadTree)
 
 <template>
   <div class="doc-page">
-    <!-- 左侧：分类树 -->
     <div class="doc-sider">
       <div class="sider-header">
         <span class="sider-title"><FolderOutlined /> 文档分类</span>
-        <a-tooltip title="新增根分类">
+        <Tooltip title="新增根分类">
           <a-button type="text" size="small" @click="addRootNode"><FolderAddOutlined /></a-button>
-        </a-tooltip>
+        </Tooltip>
       </div>
       <div class="sider-search">
         <a-input v-model:value="searchTitle" placeholder="搜索文档标题" allow-clear size="small">
@@ -444,13 +493,12 @@ onMounted(loadTree)
           <template #title="{ key, title }">
             <span class="tree-node-title">
               <FolderOutlined v-if="key === 'root'" style="color:#faad14;margin-right:4px" />
-              <FileMarkdownOutlined v-else style="color:#1677ff;margin-right:4px" />
+              <FileMarkdownOutlined v-else style="color:#5E6AD2;margin-right:4px" />
               {{ title }}
             </span>
           </template>
         </a-tree>
       </div>
-      <!-- 右键菜单 -->
       <div
         v-if="contextMenu.visible"
         class="ctx-menu"
@@ -462,77 +510,136 @@ onMounted(loadTree)
       </div>
     </div>
 
-    <!-- 右侧：文档列表 + 操作 -->
     <div class="doc-main">
-      <!-- 工具栏 -->
-      <div class="doc-toolbar">
-        <div class="toolbar-left">
-          <span class="current-cat">
-            <FolderOutlined /> {{ selectedCategory || '全部文档' }}
-            <span class="doc-count">{{ filteredTotal }} 篇</span>
+      <div class="main-inner">
+        <a-row :gutter="16" class="stat-row">
+          <a-col :xs="24" :sm="8">
+            <div class="stat-card" :style="{ '--accent': '#5E6AD2', '--accent-soft': 'rgba(94, 106, 210, 0.15)' }">
+              <div class="stat-icon"><FileDoneOutlined /></div>
+              <div class="stat-info">
+                <div class="stat-value">{{ mdStats.total }}<span class="stat-unit">篇</span></div>
+                <div class="stat-label">文档总数</div>
+              </div>
+            </div>
+          </a-col>
+          <a-col :xs="24" :sm="8">
+            <div class="stat-card" :style="{ '--accent': '#34C759', '--accent-soft': 'rgba(52, 199, 89, 0.15)' }">
+              <div class="stat-icon"><RiseOutlined /></div>
+              <div class="stat-info">
+                <div class="stat-value">{{ mdStats.monthNew }}<span class="stat-unit">篇</span></div>
+                <div class="stat-label">本月新增</div>
+              </div>
+            </div>
+          </a-col>
+          <a-col :xs="24" :sm="8">
+            <div class="stat-card" :style="{ '--accent': '#FF9F0A', '--accent-soft': 'rgba(255, 159, 10, 0.15)' }">
+              <div class="stat-icon"><AuditOutlined /></div>
+              <div class="stat-info">
+                <div class="stat-value">{{ (mdStats.totalWords / 1000).toFixed(1) }}<span class="stat-unit">K字</span></div>
+                <div class="stat-label">累计字数</div>
+              </div>
+            </div>
+          </a-col>
+        </a-row>
+
+        <div class="section-title">
+          <span class="title-text">文档分类</span>
+          <div class="section-actions">
+            <a-button size="small" @click="loadData"><ReloadOutlined /> 刷新</a-button>
+            <Upload v-bind="uploadProps" :show-upload-list="false">
+              <a-button size="small" type="dashed"><UploadOutlined /> 上传</a-button>
+            </Upload>
+            <a-button size="small" type="primary" @click="openAdd"><FileAddOutlined /> 新建文档</a-button>
+          </div>
+        </div>
+        <div class="category-grid">
+          <div
+            v-for="cat in mdCategoryList"
+            :key="cat.key"
+            class="category-card"
+            :class="{ active: selectedCategory === cat.key }"
+            :style="{ '--cat-color': cat.color, '--cat-bg': cat.bg }"
+            @click="selectedCategory = selectedCategory === cat.key ? null : (selectedCategory = cat.key as any); selectedKeys = []"
+          >
+            <div class="cat-badge">{{ mdCategoryCounts[cat.key] || 0 }}</div>
+            <div class="cat-icon"><component :is="cat.icon" /></div>
+            <div class="cat-label">{{ cat.label }}</div>
+          </div>
+        </div>
+
+        <div class="section-title">
+          <span class="title-text">
+            <FolderOutlined style="color:#5E6AD2;margin-right:6px" />
+            {{ selectedCategory || '全部文档' }}
+            <span class="sub-count">({{ sortedList.length }} 篇)</span>
           </span>
         </div>
-        <div class="toolbar-right">
-          <a-button size="small" @click="loadData"><ReloadOutlined /> 刷新</a-button>
-          <Upload v-bind="uploadProps" :show-upload-list="false">
-            <a-button size="small" type="dashed"><UploadOutlined /> 上传</a-button>
-          </Upload>
-          <a-button size="small" type="primary" @click="openAdd"><FileAddOutlined /> 新建文档</a-button>
+        <div class="tag-row">
+          <div
+            v-for="tag in mdTagList"
+            :key="tag"
+            class="tag-chip"
+            :class="{ active: selectedTag === tag }"
+            @click="selectedTag = selectedTag === tag ? null : tag"
+          >
+            {{ tag }}
+          </div>
         </div>
-      </div>
 
-      <!-- 文档列表 -->
-      <div class="doc-list" v-if="filteredData.length">
-        <div
-          v-for="r in filteredData"
-          :key="r.id"
-          class="doc-item"
-          :class="{ active: selectedDoc?.id === r.id }"
-          @click="selectDoc(r)"
-        >
-          <div class="doc-item-left">
-            <component :is="categoryIcon[r.category || '其他'] || FileTextOutlined" class="doc-item-icon" />
-            <div class="doc-item-info">
-              <div class="doc-item-title">{{ r.title }}</div>
-              <div class="doc-item-meta">
-                <a-tag v-if="r.category" :color="categoryColorMap[r.category] || 'default'" style="font-size:11px">{{ r.category }}</a-tag>
-                <a-tag v-if="r.status" :color="statusColorMap[r.status] || 'default'" style="font-size:11px">{{ r.status }}</a-tag>
-                <span v-if="r.wordCount" class="meta-text">{{ r.wordCount }} 字</span>
-                <span class="meta-text">{{ r.updateTime || r.createTime }}</span>
+        <a-spin :spinning="loading" tip="加载中...">
+          <div v-if="sortedList.length" class="note-list">
+            <div
+              v-for="r in sortedList"
+              :key="r.id"
+              class="note-card"
+            >
+              <div class="note-main" @click="selectDoc(r)">
+                <div class="note-head">
+                  <component :is="categoryIcon[r.category || '其他'] || FileTextOutlined" class="doc-icon" />
+                  <h4 class="note-title">{{ r.title }}</h4>
+                  <Tag
+                    :color="categoryColorMap[r.category || '其他'] || 'default'"
+                    class="note-cat-tag"
+                  >
+                    {{ r.category || '未分类' }}
+                  </Tag>
+                </div>
+                <div class="note-abstract">{{ getAbstract(r) || '暂无内容摘要，点击查看详情' }}</div>
+                <div class="note-meta">
+                  <span class="meta-item"><ClockCircleOutlined /> {{ getTimeText(r) }}</span>
+                  <span v-if="r.wordCount" class="meta-item"><FileTextOutlined /> {{ r.wordCount }} 字</span>
+                  <span v-if="r.status" class="meta-item status-tag" :data-status="r.status">{{ r.status }}</span>
+                </div>
+              </div>
+              <div class="note-actions" @click.stop>
+                <Tooltip title="下载"><a-button type="text" size="small" @click="downloadFile(r)"><DownloadOutlined /></a-button></Tooltip>
+                <Tooltip title="Typora打开" v-if="['Skill 技能','TXT','其他'].includes(r.category || '') || !r.category">
+                  <a-button type="text" size="small" @click="openTypora(r)"><FolderOpenOutlined /></a-button>
+                </Tooltip>
+                <Tooltip title="本地打开" v-if="['Word','Excel','PDF'].includes(r.category || '')">
+                  <a-button type="text" size="small" @click="openDefault(r, r.category!)"><RocketOutlined /></a-button>
+                </Tooltip>
+                <Tooltip title="写入本地"><a-button type="text" size="small" @click="saveToFile(r)"><CloudDownloadOutlined /></a-button></Tooltip>
+                <Tooltip title="元信息"><a-button type="text" size="small" @click="openEdit(r)"><EditOutlined /></a-button></Tooltip>
+                <Tooltip title="删除"><a-button type="text" size="small" danger @click="handleDelete(r)"><DeleteOutlined /></a-button></Tooltip>
               </div>
             </div>
           </div>
-          <div class="doc-item-actions" @click.stop>
-            <a-tooltip title="下载"><a-button type="text" size="small" @click="downloadFile(r)"><DownloadOutlined /></a-button></a-tooltip>
-            <a-tooltip title="Typora打开" v-if="['Skill 技能','TXT','其他'].includes(r.category || '') || !r.category">
-              <a-button type="text" size="small" @click="openTypora(r)"><FolderOpenOutlined /></a-button>
-            </a-tooltip>
-            <a-tooltip title="本地打开" v-if="['Word','Excel','PDF'].includes(r.category || '')">
-              <a-button type="text" size="small" @click="openDefault(r, r.category!)"><RocketOutlined /></a-button>
-            </a-tooltip>
-            <a-tooltip title="写入本地"><a-button type="text" size="small" @click="saveToFile(r)"><CloudDownloadOutlined /></a-button></a-tooltip>
-            <a-tooltip title="元信息"><a-button type="text" size="small" @click="openEdit(r)"><EditOutlined /></a-button></a-tooltip>
-            <a-tooltip title="删除"><a-button type="text" size="small" danger @click="handleDelete(r)"><DeleteOutlined /></a-button></a-tooltip>
+          <div v-else class="note-empty">
+            <div class="empty-icon">📄</div>
+            <div class="empty-title">暂无文档</div>
+            <div class="empty-desc">点击右上角「新建文档」或「上传」开始记录</div>
+            <a-space style="margin-top:16px">
+              <a-button type="primary" @click="openAdd"><PlusOutlined /> 新建文档</a-button>
+              <Upload v-bind="uploadProps" :show-upload-list="false">
+                <a-button type="dashed"><UploadOutlined /> 上传文件</a-button>
+              </Upload>
+            </a-space>
           </div>
-        </div>
-      </div>
-      <div v-else class="doc-empty">
-        <Empty description="暂无文档，点击右上角新建或上传" />
-      </div>
-      <!-- 分页器 -->
-      <div class="doc-pagination" v-if="filteredTotal > mdPageSize">
-        <a-pagination
-          v-model:current="mdPage"
-          :page-size="mdPageSize"
-          :total="filteredTotal"
-          size="small"
-          show-quick-jumper
-          :show-total="(t: number) => `共 ${t} 篇`"
-        />
+        </a-spin>
       </div>
     </div>
 
-    <!-- 新建/编辑元信息弹窗 -->
     <a-modal
       v-model:open="formVisible"
       :title="isEdit ? '编辑文档元信息' : '新建文档'"
@@ -540,6 +647,7 @@ onMounted(loadTree)
       ok-text="保存" cancel-text="取消"
       @ok="saveForm"
       :width="640"
+      :destroyOnClose="true"
     >
       <a-form ref="formRef" :model="formModel" :rules="formRules" layout="vertical">
         <a-row :gutter="16">
@@ -581,7 +689,6 @@ onMounted(loadTree)
       </a-form>
     </a-modal>
 
-    <!-- Markdown 编辑器弹窗 -->
     <a-modal
       v-model:open="editorVisible"
       :title="`${editorTitle || '文档'} - 编辑与预览`"
@@ -616,67 +723,341 @@ onMounted(loadTree)
 <style scoped>
 .doc-page { display: flex; flex: 1; min-height: 0; overflow: hidden; }
 
-/* 左侧 */
 .doc-sider {
-  width: 240px; flex-shrink: 0; border-right: 1px solid var(--color-border, #f0f0f0);
-  display: flex; flex-direction: column; background: var(--color-bg-card, #fafafa);
+  width: 240px; flex-shrink: 0; border-right: 1px solid var(--color-border);
+  display: flex; flex-direction: column; background: var(--color-bg-card);
 }
-.sider-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px 8px; }
-.sider-title { font-weight: 600; font-size: 14px; color: var(--color-text, #222); }
-.sider-search { padding: 0 14px 8px; }
-.sider-tree { flex: 1; overflow: auto; padding: 0 6px; }
+.sider-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px 10px; }
+.sider-title { font-weight: 600; font-size: 14px; color: var(--color-text); display: flex; align-items: center; gap: 6px; }
+.sider-search { padding: 0 14px 10px; }
+.sider-tree { flex: 1; overflow: auto; padding: 0 6px 10px; }
+.sider-tree :deep(.ant-tree) { background: transparent; color: var(--color-text-secondary); }
+.sider-tree :deep(.ant-tree-node-selected .ant-tree-node-content-wrapper) {
+  background: var(--color-primary-soft) !important;
+  color: var(--color-text) !important;
+  border-radius: 6px;
+}
+.sider-tree :deep(.ant-tree-node-content-wrapper:hover) {
+  background: var(--color-bg-hover) !important;
+  border-radius: 6px;
+}
 .sider-tree :deep(.ant-tree-node-content-wrapper) { width: 100%; }
 .tree-node-title { font-size: 13px; }
 
-/* 右键菜单 */
 .ctx-menu {
-  position: fixed; z-index: 9999; background: #fff; border: 1px solid #e8e8e8;
-  border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); padding: 4px 0; min-width: 140px;
+  position: fixed; z-index: 9999; background: var(--color-bg-elevated); border: 1px solid var(--color-border-strong);
+  border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.4); padding: 4px 0; min-width: 140px;
 }
-.ctx-item { padding: 6px 14px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 6px; }
-.ctx-item:hover { background: #f5f5f5; }
-.ctx-danger { color: #ff4d4f; }
+.ctx-item { padding: 7px 14px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 6px; color: var(--color-text-secondary); }
+.ctx-item:hover { background: var(--color-bg-hover); color: var(--color-text); }
+.ctx-danger { color: var(--color-error); }
+.ctx-danger:hover { background: var(--color-error-soft); }
 
-/* 右侧 */
-.doc-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
-.doc-toolbar {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 10px 18px; border-bottom: 1px solid var(--color-border, #f0f0f0);
+.doc-main { flex: 1; overflow: hidden; min-height: 0; background: var(--color-bg); }
+.main-inner {
+  height: 100%;
+  overflow-y: auto;
+  padding: 20px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.stat-row { margin: 0; }
+.stat-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 20px;
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  transition: all 0.25s ease;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+.stat-card::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 4px;
+  background: var(--accent);
+}
+.stat-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+}
+.stat-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  background: var(--accent-soft);
+  color: var(--accent);
   flex-shrink: 0;
 }
-.toolbar-left { display: flex; align-items: center; }
-.current-cat { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
-.doc-count { font-size: 12px; color: #999; font-weight: normal; }
-.toolbar-right { display: flex; gap: 8px; }
-
-/* 文档列表 */
-.doc-list { flex: 1; overflow-y: auto; padding: 8px 12px; min-height: 0; }
-.doc-item {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 10px 14px; margin-bottom: 6px; border-radius: 8px; cursor: pointer;
-  border: 1px solid transparent; transition: all 0.2s;
+.stat-info { flex: 1; min-width: 0; }
+.stat-value {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--color-text);
+  line-height: 1.1;
 }
-.doc-item:hover { background: var(--color-bg-card, #f5f7fa); border-color: #e8e8e8; }
-.doc-item.active { background: #e6f4ff; border-color: #91caff; }
-.doc-item-left { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
-.doc-item-icon { font-size: 20px; color: #1677ff; flex-shrink: 0; }
-.doc-item-info { flex: 1; min-width: 0; }
-.doc-item-title {
-  font-size: 14px; font-weight: 500; color: var(--color-text, #222);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+.stat-unit {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--color-text-secondary);
+  margin-left: 3px;
 }
-.doc-item-meta { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
-.meta-text { font-size: 11px; color: #999; }
-.doc-item-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
-.doc-empty { flex: 1; display: flex; align-items: center; justify-content: center; }
-.doc-pagination { padding: 8px 12px; border-top: 1px solid var(--color-border, #f0f0f0); display: flex; justify-content: flex-end; flex-shrink: 0; }
+.stat-label {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin-top: 5px;
+}
 
-/* 编辑器 */
+.section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 2px;
+}
+.title-text {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text);
+  display: flex;
+  align-items: center;
+}
+.sub-count {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--color-text-secondary);
+  margin-left: 4px;
+}
+.section-actions { display: flex; gap: 8px; }
+
+.category-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 12px;
+}
+@media (max-width: 1300px) {
+  .category-grid { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 720px) {
+  .category-grid { grid-template-columns: repeat(2, 1fr); }
+}
+.category-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 16px 10px;
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  cursor: pointer;
+  transition: all 0.25s ease;
+  overflow: hidden;
+}
+.category-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--cat-color);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.28);
+}
+.category-card.active {
+  background: var(--cat-bg);
+  border-color: var(--cat-color);
+  box-shadow: 0 0 0 2px var(--cat-color) inset;
+}
+.cat-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--cat-color);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cat-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--cat-bg);
+  color: var(--cat-color);
+  font-size: 20px;
+}
+.cat-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.tag-chip {
+  padding: 5px 14px;
+  border-radius: var(--radius-full);
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+.tag-chip:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+.tag-chip.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+.note-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.note-card {
+  display: flex;
+  gap: 10px;
+  padding: 16px 18px;
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  transition: all 0.25s ease;
+}
+.note-card:hover {
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-card-hover);
+  transform: translateY(-1px);
+}
+.note-main {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+.note-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.doc-icon {
+  font-size: 22px;
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+.note-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text);
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.note-cat-tag {
+  font-size: 11px;
+  border-radius: 6px;
+  padding: 2px 10px;
+  flex-shrink: 0;
+}
+.note-abstract {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  line-height: 1.7;
+  margin-bottom: 10px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.note-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+.meta-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.status-tag {
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+  font-weight: 500;
+}
+.status-tag[data-status="已完成"] { background: var(--color-success-soft); color: var(--color-success); }
+.status-tag[data-status="撰写中"] { background: var(--color-info-soft); color: var(--color-info); }
+.status-tag[data-status="草稿"] { background: var(--color-bg-elevated); color: var(--color-text-secondary); }
+
+.note-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.note-card:hover .note-actions {
+  opacity: 1;
+}
+
+.note-empty {
+  padding: 56px 24px;
+  text-align: center;
+  border-radius: var(--radius-lg);
+  background: var(--color-bg-card);
+  border: 1px dashed var(--color-border);
+}
+.empty-icon { font-size: 52px; margin-bottom: 10px; }
+.empty-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: 5px;
+}
+.empty-desc {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
 .md-editor-modal :deep(.ant-modal-body) { padding: 0; }
 .md-editor-header {
   display: flex; justify-content: space-between; align-items: center;
-  padding: 10px 18px; border-bottom: 1px solid var(--color-border, #f0f0f0);
-  background: var(--color-bg-card, #fafafa);
+  padding: 10px 18px; border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-card);
 }
 .md-editor-body { flex: 1; display: flex; min-height: 0; }
 .md-editor-body.mode-edit .md-edit-pane { width: 100%; }
@@ -684,27 +1065,68 @@ onMounted(loadTree)
 .md-editor-body.mode-preview .md-edit-pane { display: none; }
 .md-editor-body.mode-preview .md-preview-pane { width: 100%; }
 .md-editor-body.mode-split .md-edit-pane,
-.md-editor-body.mode-split .md-preview-pane { width: 50%; border-right: 1px solid var(--color-border, #f0f0f0); }
+.md-editor-body.mode-split .md-preview-pane { width: 50%; border-right: 1px solid var(--color-border); }
 .md-editor-body.mode-split .md-preview-pane { border-right: none; }
 .md-edit-pane { display: flex; min-height: 0; }
 .md-textarea {
-  flex: 1; width: 100%; padding: 18px; border: none; outline: none; resize: none;
+  flex: 1; width: 100%; padding: 16px; border: none; outline: none; resize: none;
   font-family: Consolas, Monaco, monospace; font-size: 14px; line-height: 1.7;
-  background: var(--color-bg, #fff); color: var(--color-text, #222);
+  background: var(--color-bg); color: var(--color-text);
 }
 .md-preview-pane { overflow: auto; }
-.md-preview { padding: 18px 24px; line-height: 1.75; color: var(--color-text, #222); }
-.md-preview h1, .md-preview h2, .md-preview h3, .md-preview h4 { margin: 18px 0 10px; font-weight: 600; }
-.md-preview h1 { font-size: 26px; border-bottom: 1px solid var(--color-border, #eee); padding-bottom: 6px; }
-.md-preview h2 { font-size: 22px; border-bottom: 1px solid var(--color-border, #eee); padding-bottom: 4px; }
-.md-preview h3 { font-size: 18px; }
-.md-preview p { margin: 8px 0; }
-.md-preview ul, .md-preview ol { padding-left: 24px; margin: 8px 0; }
-.md-preview blockquote { margin: 10px 0; padding: 8px 14px; border-left: 4px solid #1677ff; background: #f0f7ff; border-radius: 0 4px 4px 0; }
-.md-preview code.md-inline-code { padding: 2px 6px; background: #f5f5f5; border-radius: 4px; font-family: Consolas, Monaco, monospace; font-size: 13px; color: #c7254e; }
-.md-preview pre.md-fence { background: #1e1e1e; color: #d4d4d4; padding: 14px 16px; border-radius: 6px; overflow: auto; margin: 10px 0; font-family: Consolas, Monaco, monospace; font-size: 13px; }
+.md-preview { padding: 16px 24px; line-height: 1.75; color: var(--color-text); }
+.md-preview h1, .md-preview h2, .md-preview h3, .md-preview h4 { margin: 16px 0 8px; font-weight: 600; }
+.md-preview h1 { font-size: 24px; border-bottom: 1px solid var(--color-border); padding-bottom: 6px; }
+.md-preview h2 { font-size: 20px; border-bottom: 1px solid var(--color-border); padding-bottom: 4px; }
+.md-preview h3 { font-size: 17px; }
+.md-preview p { margin: 6px 0; }
+.md-preview ul, .md-preview ol { padding-left: 24px; margin: 6px 0; }
+.md-preview blockquote { margin: 8px 0; padding: 8px 14px; border-left: 4px solid var(--color-primary); background: var(--color-primary-soft); border-radius: 0 4px 4px 0; }
+.md-preview code.md-inline-code { padding: 2px 6px; background: var(--color-bg-elevated); border-radius: 4px; font-family: Consolas, Monaco, monospace; font-size: 13px; color: var(--color-primary); }
+.md-preview pre.md-fence { background: #1e1e1e; color: #d4d4d4; padding: 12px 14px; border-radius: 6px; overflow: auto; margin: 8px 0; font-family: Consolas, Monaco, monospace; font-size: 13px; }
 .md-preview pre.md-fence code { background: none; color: inherit; }
-.md-preview hr { border: none; border-top: 1px solid var(--color-border, #eee); margin: 18px 0; }
-.md-preview a { color: #1677ff; }
-.md-preview img { max-width: 100%; border-radius: 4px; margin: 8px 0; }
+.md-preview hr { border: none; border-top: 1px solid var(--color-border); margin: 16px 0; }
+.md-preview a { color: var(--color-primary); }
+.md-preview img { max-width: 100%; border-radius: 4px; margin: 6px 0; }
+
+:deep(.ant-modal),
+:deep(.ant-modal-title),
+:deep(.ant-modal-content) {
+  background: var(--color-bg-card);
+  color: var(--color-text);
+}
+:deep(.ant-modal-header) {
+  background: var(--color-bg-card);
+  border-bottom: 1px solid var(--color-border);
+}
+:deep(.ant-modal-footer) {
+  border-top: 1px solid var(--color-border);
+}
+:deep(.ant-form-item-label > label) {
+  color: var(--color-text-secondary);
+}
+:deep(.ant-input),
+:deep(.ant-select-selector),
+:deep(.ant-input-number),
+:deep(.ant-picker) {
+  background: var(--color-bg-elevated) !important;
+  border-color: var(--color-border-strong) !important;
+  color: var(--color-text) !important;
+}
+:deep(.ant-input::placeholder) {
+  color: var(--color-text-tertiary);
+}
+:deep(.ant-spin-nested-loading > div > .ant-spin .ant-spin-dot i) {
+  background-color: var(--color-primary);
+}
+:deep(.ant-tag) {
+  border: none !important;
+}
+:deep(.ant-btn-text) {
+  color: var(--color-text-secondary) !important;
+}
+:deep(.ant-btn-text:hover) {
+  color: var(--color-text) !important;
+  background: var(--color-bg-hover) !important;
+}
 </style>

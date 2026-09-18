@@ -4,6 +4,7 @@ export interface CrudConfig {
   columns: CrudColumn[]
   formFields: FormField[]
   searchFields?: SearchField[]
+  extraFilter?: (record: any) => boolean
 }
 
 export interface CrudColumn {

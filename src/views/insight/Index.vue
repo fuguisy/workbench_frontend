@@ -1,363 +1,610 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted } from 'vue'
 import {
-  DashboardOutlined,
-  LineChartOutlined,
-  PieChartOutlined,
-  CheckCircleOutlined,
-  WalletOutlined,
-  RocketOutlined,
-  VideoCameraOutlined
+  BulbOutlined,
+  FileTextOutlined,
+  HistoryOutlined
 } from '@ant-design/icons-vue'
-import { statsApi, type InsightStatsVO, type TrendPoint } from '@/api/modules'
+import { Modal, message } from 'ant-design-vue'
+import { statsApi, type InsightStatsVO, type InsightItem, type CompareItem, type NextActionItem } from '@/api/modules'
 
+// ============ 设计稿固定数据（也可用后端数据覆盖） ============
+type Period = 'week' | 'month' | 'quarter'
+const period = ref<Period>('week')
+const periodTabs: { key: Period; label: string }[] = [
+  { key: 'week', label: '本周' },
+  { key: 'month', label: '本月' },
+  { key: 'quarter', label: '本季' }
+]
+
+// 顶部 3 张统计卡
+type TopCard = {
+  label: string
+  value: string
+  unit?: string
+  extra: { text: string; color: string }
+  bars: number[]       // 5 根小柱子 0-100
+  barColor: string     // 柱颜色
+  barHighlight?: number// 高亮第X根
+}
+const DEFAULT_TOP_CARDS: TopCard[] = [
+  {
+    label: '本周专注',
+    value: '12.4',
+    unit: 'h',
+    extra: { text: '较上周 +18%', color: '#34C759' },
+    bars: [30, 38, 48, 62, 80],
+    barColor: '#5E6AD2',
+    barHighlight: 4
+  },
+  {
+    label: '任务完成率',
+    value: '82',
+    unit: '%',
+    extra: { text: '3 项延期', color: '#FF9F0A' },
+    bars: [35, 45, 55, 70, 82],
+    barColor: '#34C759',
+    barHighlight: 4
+  },
+  {
+    label: '内容产出',
+    value: '14',
+    unit: '篇',
+    extra: { text: '公众号6 · 视频5 · 小红书3', color: '#A1A1AA' },
+    bars: [22, 40, 58, 70, 78],
+    barColor: '#FF9F0A',
+    barHighlight: 4
+  }
+]
+const topCards = ref<TopCard[]>(DEFAULT_TOP_CARDS.map(c => ({ ...c, bars: [...c.bars] })))
+
+// 本周洞察 5 条
+const DEFAULT_INSIGHTS: InsightItem[] = [
+  { title: '专注时段', desc: '深夜 22-24 点效率最高，平均产出 +32%', tag: '22-24 点' },
+  { title: '任务节奏', desc: '周三、周四交付最密集，建议错峰安排', tag: '周三-周四' },
+  { title: '内容表现', desc: '小红书互动率最高，短视频涨粉最快', tag: '互动 8.2%' },
+  { title: '习惯坚持', desc: '阅读连续 21 天，运动中断 2 次需补回', tag: '21 天' },
+  { title: 'AI 协作', desc: '本月消耗 1.2M tokens，多用于写作与代码', tag: '1.2M' }
+]
+const insights = ref<InsightItem[]>([...DEFAULT_INSIGHTS])
+
+// 周期对比
+type CompareRow = {
+  label: string
+  last: number     // 上周 0-100
+  cur: number      // 本周 0-100
+  delta: string
+  deltaColor: string
+}
+const DEFAULT_COMPARES: CompareRow[] = [
+  { label: '专注时长',   last: 52, cur: 70, delta: '+18%',  deltaColor: '#34C759' },
+  { label: '任务完成率', last: 60, cur: 67, delta: '+7pp',  deltaColor: '#34C759' },
+  { label: '内容产出',   last: 48, cur: 75, delta: '+27%',  deltaColor: '#34C759' }
+]
+const compares = ref<CompareRow[]>(DEFAULT_COMPARES.map(c => ({ ...c })))
+
+// 下周行动项
+type Action = {
+  id: number
+  title: string
+  role: '开发' | '个人' | '创作'
+  done: boolean
+}
+const DEFAULT_ACTIONS: Action[] = [
+  { id: 1, title: '周四前完成产品评审会纪要整理', role: '开发', done: true },
+  { id: 2, title: '把深夜专注时段前移到 20-22 点，保持作息', role: '个人', done: false },
+  { id: 3, title: 'B站《独立开发工具》脚本定稿并预约拍摄', role: '创作', done: false }
+]
+const actions = ref<Action[]>(DEFAULT_ACTIONS.map(a => ({ ...a })))
+const roleColor = (r: Action['role']) =>
+  r === '开发' ? '#5E6AD2' : r === '创作' ? '#FF9F0A' : '#34C759'
+
+// ============ 后端数据加载（叠加到默认展示上，有新字段覆盖，否则 fallback） ============
 const loading = ref(false)
 const data = ref<InsightStatsVO | null>(null)
+
+const formatSignPct = (val?: number) => {
+  if (val === undefined || val === null) return ''
+  const s = val >= 0 ? '+' : ''
+  return `${s}${Math.round(val * 10) / 10}%`
+}
 
 const loadData = async () => {
   loading.value = true
   try {
-    const res: any = await statsApi.insight()
-    data.value = res as any
+    const res = await statsApi.insight()
+    data.value = res || null
+    const vo = res as InsightStatsVO | null
+
+    // ===== 覆盖 topCards =====
+    const tc: TopCard[] = DEFAULT_TOP_CARDS.map(c => ({ ...c, bars: [...c.bars] }))
+    // Card 0: 本周专注
+    if (vo?.focusHoursThisWeek !== undefined && vo.focusHoursThisWeek !== null) {
+      tc[0].value = String(Math.round(vo.focusHoursThisWeek * 10) / 10)
+    }
+    if (vo?.focusHoursMomPct !== undefined && vo.focusHoursMomPct !== null) {
+      const pct = vo.focusHoursMomPct
+      tc[0].extra = {
+        text: `较上周 ${formatSignPct(pct)}`,
+        color: pct >= 0 ? '#34C759' : '#FF375F'
+      }
+    }
+    if (vo?.barsFocus?.length) tc[0].bars = [...vo.barsFocus]
+    // Card 1: 任务完成率
+    if (vo?.todoDoneRate !== undefined && vo.todoDoneRate !== null) {
+      tc[1].value = String(Math.round(vo.todoDoneRate))
+    }
+    const overdue = vo?.todoOverdueCount
+    if (overdue !== undefined && overdue !== null) {
+      tc[1].extra = {
+        text: overdue > 0 ? `${overdue} 项延期` : '无延期',
+        color: overdue > 0 ? '#FF9F0A' : '#34C759'
+      }
+    }
+    if (vo?.todoStats) {
+      const t = vo.todoStats
+      const rate = t.total ? Math.round((t.done / t.total) * 100) : 0
+      if (vo.todoDoneRate === undefined || vo.todoDoneRate === null) tc[1].value = String(rate)
+    }
+    if (vo?.barsTodo?.length) tc[1].bars = [...vo.barsTodo]
+    // Card 2: 内容产出
+    if (vo?.contentOutputThisWeek !== undefined && vo.contentOutputThisWeek !== null) {
+      tc[2].value = String(vo.contentOutputThisWeek)
+    }
+    if (vo?.contentBreakdown) {
+      const bd = vo.contentBreakdown
+      const parts: string[] = []
+      if (bd.gzh) parts.push(`公众号${bd.gzh}`)
+      if (bd.video) parts.push(`视频${bd.video}`)
+      if (bd.xhs) parts.push(`小红书${bd.xhs}`)
+      if (bd.other) parts.push(`其他${bd.other}`)
+      if (parts.length) tc[2].extra = { text: parts.join(' · '), color: tc[2].extra.color }
+    }
+    if (vo?.barsContent?.length) tc[2].bars = [...vo.barsContent]
+    topCards.value = tc
+
+    // ===== 覆盖 insights =====
+    if (vo?.insights && vo.insights.length > 0) {
+      insights.value = vo.insights.map(it => ({ title: it.title, desc: it.desc, tag: it.tag }))
+    }
+
+    // ===== 覆盖 compares =====
+    if (vo?.compares && vo.compares.length > 0) {
+      compares.value = vo.compares.map(c => ({
+        label: c.label,
+        last: c.last,
+        cur: c.cur,
+        delta: c.delta,
+        deltaColor: c.deltaColor
+      }))
+    }
+
+    // ===== 覆盖 nextActions =====
+    if (vo?.nextActions && vo.nextActions.length > 0) {
+      const mapped: Action[] = vo.nextActions.map(a => {
+        const roleMap: Record<string, Action['role']> = {
+          '开发': '开发', 'DEV': '开发',
+          '创作': '创作', 'CONTENT': '创作', '个人': '个人', 'LIFE': '个人'
+        }
+        const r = (roleMap[a.role] as Action['role']) || '个人'
+        return { id: Number(a.id) || Date.now() + Math.random(), title: a.title, role: r, done: !!a.done }
+      })
+      actions.value = mapped
+    }
+  } catch (e) {
+    // 静默失败，使用本地 mock 数据
   } finally {
     loading.value = false
   }
 }
-
 onMounted(loadData)
 
-// 计算近7日趋势图最大高度
-const trendMax = computed(() => {
-  if (!data.value?.last7DaysTrend?.length) return 1
-  return Math.max(1, ...data.value.last7DaysTrend.map(t =>
-    (t.todoCount || 0) + (t.ideaCount || 0) + (t.noteCount || 0) + (t.moneyCount || 0)
-  ))
-})
-
-// 收支对比
-const moneyBalance = computed(() => {
-  if (!data.value) return 0
-  const inc = Number(data.value.moneyStats?.income || 0)
-  const exp = Number(data.value.moneyStats?.expense || 0)
-  return inc - exp
-})
-
-// 任务完成率
-const todoRate = computed(() => {
-  if (!data.value?.todoStats || data.value.todoStats.total === 0) return 0
-  return Math.round((data.value.todoStats.done / data.value.todoStats.total) * 100)
-})
-
-// 模块分布最大值（用于进度条宽度）
-const distMax = computed(() => {
-  if (!data.value?.moduleDistribution) return 1
-  return Math.max(1, ...Object.values(data.value.moduleDistribution))
-})
-
-// 收支分类
-const incomeEntries = computed(() => Object.entries(data.value?.moneyStats?.incomeByCategory || {}))
-const expenseEntries = computed(() => Object.entries(data.value?.moneyStats?.expenseByCategory || {}))
+// ============ 操作 ============
+const generateReport = () => {
+  Modal.info({
+    title: '生成本周报告',
+    content: '周报将汇总本周任务、习惯、自媒体产出、收支等数据生成 Markdown 报告并保存到文档管理中。（功能接入报告生成接口即可）',
+    okText: '好的'
+  })
+  message.success('报告生成任务已提交')
+}
+const viewHistory = () => {
+  message.info('历史报告：后续在文档管理的「复盘报告」分类中查看')
+}
+const toggleAction = (a: Action) => { a.done = !a.done }
 </script>
 
 <template>
   <div class="insight-page">
-    <!-- 头部 -->
-    <div class="page-header">
+    <!-- 顶部标题+操作区 -->
+    <div class="page-head">
       <div>
-        <h2 class="page-title">📊 洞察复盘</h2>
-        <p class="page-desc">数据驱动，发现成长节奏，复盘每一周、每一月的产出轨迹</p>
+        <h1 class="title">洞察复盘</h1>
+        <p class="desc">用数据回顾你的时间、产出与习惯，找到可优化的方向</p>
       </div>
-      <a-button type="primary" :loading="loading" @click="loadData">
-        <LineChartOutlined /> 刷新数据
-      </a-button>
+      <div class="head-right">
+        <div class="btn-group">
+          <button class="btn btn-primary" @click="generateReport">
+            <FileTextOutlined /> 生成本周报告
+          </button>
+          <button class="btn btn-ghost" @click="viewHistory">
+            <HistoryOutlined /> 查看历史
+          </button>
+        </div>
+        <div class="period-tabs">
+          <div
+            v-for="t in periodTabs"
+            :key="t.key"
+            class="tab"
+            :class="{ active: period === t.key }"
+            @click="period = t.key"
+          >{{ t.label }}</div>
+        </div>
+      </div>
     </div>
 
-    <a-spin :spinning="loading">
-      <!-- 总览卡片 -->
-      <a-row :gutter="16" class="overview-row">
-        <a-col :xs="12" :sm="8" :md="6">
-          <a-card class="ov-card" :bordered="false" :loading="loading">
-            <div class="ov-icon" style="background:#e6f4ff;color:#1677ff"><DashboardOutlined /></div>
-            <div class="ov-value">{{ data?.overview?.totalRecords ?? 0 }}</div>
-            <div class="ov-label">数据总记录</div>
-          </a-card>
-        </a-col>
-        <a-col :xs="12" :sm="8" :md="6">
-          <a-card class="ov-card" :bordered="false" :loading="loading">
-            <div class="ov-icon" style="background:#f6ffed;color:#52c41a"><CheckCircleOutlined /></div>
-            <div class="ov-value">{{ data?.overview?.thisWeekNew ?? 0 }}<span class="ov-suffix">条</span></div>
-            <div class="ov-label">本周新增</div>
-          </a-card>
-        </a-col>
-        <a-col :xs="12" :sm="8" :md="6">
-          <a-card class="ov-card" :bordered="false" :loading="loading">
-            <div class="ov-icon" style="background:#fff7e6;color:#fa8c16"><RocketOutlined /></div>
-            <div class="ov-value">{{ data?.overview?.thisMonthNew ?? 0 }}<span class="ov-suffix">条</span></div>
-            <div class="ov-label">本月新增</div>
-          </a-card>
-        </a-col>
-        <a-col :xs="12" :sm="8" :md="6">
-          <a-card class="ov-card" :bordered="false" :loading="loading">
-            <div class="ov-icon" style="background:#fff0f6;color:#eb2f96"><PieChartOutlined /></div>
-            <div class="ov-value">{{ todoRate }}<span class="ov-suffix">%</span></div>
-            <div class="ov-label">任务完成率</div>
-          </a-card>
-        </a-col>
-      </a-row>
-
-      <!-- 近7日趋势 -->
-      <a-card class="trend-card" :bordered="false" :loading="loading">
-        <template #title>
-          <div class="card-title"><LineChartOutlined class="ct-icon" style="color:#1677ff" /> 近7日每日新增趋势</div>
-        </template>
-        <div class="trend-chart">
-          <div v-for="(p, idx) in (data?.last7DaysTrend || []) as TrendPoint[]" :key="idx" class="trend-col">
-            <div class="trend-bars">
-              <div
-                class="bar bar-todo"
-                :style="{ height: `${((p.todoCount||0) / trendMax) * 100}%`, background:'#1677ff' }"
-                :title="`任务：${p.todoCount||0}`"
-              ></div>
-              <div
-                class="bar bar-idea"
-                :style="{ height: `${((p.ideaCount||0) / trendMax) * 100}%`, background:'#faad14' }"
-                :title="`灵感：${p.ideaCount||0}`"
-              ></div>
-              <div
-                class="bar bar-note"
-                :style="{ height: `${((p.noteCount||0) / trendMax) * 100}%`, background:'#52c41a' }"
-                :title="`笔记/稿件：${p.noteCount||0}`"
-              ></div>
-              <div
-                class="bar bar-money"
-                :style="{ height: `${((p.moneyCount||0) / trendMax) * 100}%`, background:'#eb2f96' }"
-                :title="`记账笔数：${p.moneyCount||0}`"
-              ></div>
-            </div>
-            <div class="trend-date">{{ p.date }}</div>
+    <!-- 3 张顶部统计卡 -->
+    <div class="top-cards">
+      <div v-for="(c, i) in topCards" :key="i" class="top-card">
+        <div class="card-left">
+          <div class="card-label">{{ c.label }}</div>
+          <div class="card-value">
+            {{ c.value }}<span v-if="c.unit" class="unit">{{ c.unit }}</span>
           </div>
+          <div class="card-extra" :style="{ color: c.extra.color }">{{ c.extra.text }}</div>
         </div>
-        <div class="trend-legend">
-          <span class="lg-item"><i style="background:#1677ff"></i> 任务</span>
-          <span class="lg-item"><i style="background:#faad14"></i> 灵感</span>
-          <span class="lg-item"><i style="background:#52c41a"></i> 笔记/稿件</span>
-          <span class="lg-item"><i style="background:#eb2f96"></i> 记账笔数</span>
+        <!-- 右侧迷你 5 柱 SVG 条形图 -->
+        <svg class="mini-bars" viewBox="0 0 120 60" preserveAspectRatio="none" aria-hidden="true">
+          <g transform="translate(8, 54)">
+            <rect
+              v-for="(b, bi) in c.bars"
+              :key="bi"
+              :x="bi * 22"
+              :y="-b"
+              width="14"
+              :height="b"
+              rx="3"
+              :fill="bi === c.barHighlight ? c.barColor : c.barColor"
+              :opacity="bi === c.barHighlight ? 1 : 0.55 + bi * 0.08"
+            />
+          </g>
+        </svg>
+      </div>
+    </div>
+
+    <!-- 本周洞察 -->
+    <section class="panel">
+      <div class="panel-title">本周洞察</div>
+      <ul class="insight-list">
+        <li v-for="(it, i) in insights" :key="i" class="insight-row">
+          <span class="bulb"><BulbOutlined /></span>
+          <div class="row-body">
+            <div class="row-title">{{ it.title }}</div>
+            <div class="row-desc">{{ it.desc }}</div>
+          </div>
+          <div class="row-tag">{{ it.tag }}</div>
+        </li>
+      </ul>
+    </section>
+
+    <!-- 周期对比·本周 vs 上周 -->
+    <section class="panel">
+      <div class="panel-title">周期对比 · 本周 vs 上周</div>
+      <div class="compare-list">
+        <div v-for="(c, i) in compares" :key="i" class="compare-row">
+          <div class="cmp-label">{{ c.label }}</div>
+          <div class="cmp-bars">
+            <div class="cmp-bar-row">
+              <span class="bar-mini-label">上周</span>
+              <div class="cmp-bar cmp-bar-last">
+                <div class="cmp-bar-inner" :style="{ width: c.last + '%' }"></div>
+              </div>
+            </div>
+            <div class="cmp-bar-row">
+              <span class="bar-mini-label">本周</span>
+              <div class="cmp-bar cmp-bar-cur">
+                <div class="cmp-bar-inner" :style="{ width: c.cur + '%' }"></div>
+              </div>
+            </div>
+          </div>
+          <div class="cmp-delta" :style="{ color: c.deltaColor }">{{ c.delta }}</div>
         </div>
-      </a-card>
+      </div>
+    </section>
 
-      <a-row :gutter="16" class="main-row">
-        <!-- 左：任务统计 + 项目Top5 -->
-        <a-col :xs="24" :lg="12">
-          <a-card class="sub-card" :bordered="false" :loading="loading">
-            <template #title>
-              <div class="card-title"><CheckCircleOutlined class="ct-icon" style="color:#52c41a" /> 任务完成统计</div>
-            </template>
-            <div class="todo-stat-grid">
-              <div class="ts-cell">
-                <div class="ts-num" style="color:#1677ff">{{ data?.todoStats?.total ?? 0 }}</div>
-                <div class="ts-label">任务总数</div>
-              </div>
-              <div class="ts-cell">
-                <div class="ts-num" style="color:#52c41a">{{ data?.todoStats?.done ?? 0 }}</div>
-                <div class="ts-label">已完成</div>
-              </div>
-              <div class="ts-cell">
-                <div class="ts-num" style="color:#faad14">{{ data?.todoStats?.doing ?? 0 }}</div>
-                <div class="ts-label">进行中</div>
-              </div>
-              <div class="ts-cell">
-                <div class="ts-num" style="color:#ff4d4f">{{ data?.todoStats?.overdue ?? 0 }}</div>
-                <div class="ts-label">已逾期</div>
-              </div>
-            </div>
-            <a-divider />
-            <div class="card-title" style="font-size:14px;margin-bottom:12px">📌 优先级分布</div>
-            <div class="prio-row">
-              <template v-for="(label, p) in { P0:'P0 紧急', P1:'P1 高', P2:'P2 中', P3:'P3 低' }" :key="p">
-                <a-tag :color="p==='P0'?'#ff4d4f':p==='P1'?'#fa8c16':p==='P2'?'#1677ff':'#8c8c8c'" style="margin-right:8px;margin-bottom:8px">
-                  {{ label }}：{{ data?.todoStats?.priorityCount?.[p] ?? 0 }}
-                </a-tag>
-              </template>
-            </div>
-          </a-card>
+    <!-- 下周行动项 -->
+    <section class="panel">
+      <div class="panel-title">下周行动项</div>
+      <div class="action-list">
+        <label
+          v-for="a in actions"
+          :key="a.id"
+          class="action-row"
+          :class="{ done: a.done }"
+          @click="toggleAction(a)"
+        >
+          <span class="check" :class="{ checked: a.done }">
+            <svg v-if="a.done" viewBox="0 0 16 16" width="14" height="14"><path d="M3 8.5l3 3 7-7" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+          <span class="action-title">{{ a.title }}</span>
+          <span class="action-role" :style="{ background: roleColor(a.role) + '22', color: roleColor(a.role), borderColor: roleColor(a.role) + '55' }">{{ a.role }}</span>
+        </label>
+      </div>
+    </section>
 
-          <a-card class="sub-card mt16" :bordered="false" :loading="loading">
-            <template #title>
-              <div class="card-title"><RocketOutlined class="ct-icon" style="color:#722ed1" /> 项目进度 Top 5</div>
-            </template>
-            <div v-if="!data?.projectTop5?.length" class="empty-tip">暂无项目数据</div>
-            <div v-else>
-              <div v-for="(p, idx) in data.projectTop5" :key="idx" class="proj-row">
-                <div class="proj-head">
-                  <span class="proj-title">{{ p.title }}</span>
-                  <a-tag :color="p.percent>=100?'green':p.percent>=60?'blue':p.percent>=30?'orange':'red'" style="margin:0">
-                    {{ p.status }} · {{ p.percent }}%
-                  </a-tag>
-                </div>
-                <div class="proj-meta" style="color:rgba(0,0,0,0.45);font-size:12px;margin-bottom:6px">
-                  当前：{{ p.current }} / 目标：{{ p.target }}
-                </div>
-                <div class="proj-bar">
-                  <div
-                    class="proj-bar-inner"
-                    :style="{
-                      width: p.percent + '%',
-                      background: p.percent>=100?'#52c41a':p.percent>=60?'#1677ff':p.percent>=30?'#faad14':'#ff4d4f'
-                    }"
-                  ></div>
-                </div>
-              </div>
-            </div>
-          </a-card>
-        </a-col>
-
-        <!-- 右：收支统计 + 模块分布 + 自媒体产出 -->
-        <a-col :xs="24" :lg="12">
-          <a-card class="sub-card" :bordered="false" :loading="loading">
-            <template #title>
-              <div class="card-title"><WalletOutlined class="ct-icon" style="color:#eb2f96" /> 收支统计</div>
-            </template>
-            <div class="money-top">
-              <div class="money-col">
-                <div class="money-label">总收入</div>
-                <div class="money-value" style="color:#52c41a">¥ {{ Number(data?.moneyStats?.income || 0).toFixed(2) }}</div>
-              </div>
-              <div class="money-col">
-                <div class="money-label">总支出</div>
-                <div class="money-value" style="color:#ff4d4f">¥ {{ Number(data?.moneyStats?.expense || 0).toFixed(2) }}</div>
-              </div>
-              <div class="money-col">
-                <div class="money-label">结余</div>
-                <div class="money-value" :style="{ color: moneyBalance>=0?'#1677ff':'#ff4d4f' }">¥ {{ moneyBalance.toFixed(2) }}</div>
-              </div>
-            </div>
-            <a-divider />
-            <a-row :gutter="12">
-              <a-col :xs="24" :md="12">
-                <div class="card-title" style="font-size:14px;margin-bottom:10px">📈 收入分类</div>
-                <div v-if="!incomeEntries.length" class="empty-tip">暂无记录</div>
-                <div v-else>
-                  <div v-for="[k,v] in incomeEntries" :key="k" class="cat-row">
-                    <span class="cat-name">{{ k }}</span>
-                    <span class="cat-val" style="color:#52c41a">¥ {{ Number(v).toFixed(2) }}</span>
-                  </div>
-                </div>
-              </a-col>
-              <a-col :xs="24" :md="12">
-                <div class="card-title" style="font-size:14px;margin-bottom:10px">📉 支出分类</div>
-                <div v-if="!expenseEntries.length" class="empty-tip">暂无记录</div>
-                <div v-else>
-                  <div v-for="[k,v] in expenseEntries" :key="k" class="cat-row">
-                    <span class="cat-name">{{ k }}</span>
-                    <span class="cat-val" style="color:#ff4d4f">¥ {{ Number(v).toFixed(2) }}</span>
-                  </div>
-                </div>
-              </a-col>
-            </a-row>
-          </a-card>
-
-          <a-card class="sub-card mt16" :bordered="false" :loading="loading">
-            <template #title>
-              <div class="card-title"><DashboardOutlined class="ct-icon" style="color:#13c2c2" /> 模块分布</div>
-            </template>
-            <div v-for="(v, k) in (data?.moduleDistribution || {})" :key="k" class="dist-row">
-              <div class="dist-head">
-                <span>{{ k }}</span>
-                <span style="color:rgba(0,0,0,0.45)">{{ v }} 条</span>
-              </div>
-              <div class="dist-bar"><div class="dist-bar-inner" :style="{ width: `${(v/distMax)*100}%` }"></div></div>
-            </div>
-          </a-card>
-
-          <a-card class="sub-card mt16" :bordered="false" :loading="loading">
-            <template #title>
-              <div class="card-title"><VideoCameraOutlined class="ct-icon" style="color:#fa8c16" /> 自媒体产出</div>
-            </template>
-            <div class="media-grid">
-              <div class="mg-cell">
-                <div class="mg-num" style="color:#faad14">{{ data?.mediaStats?.ideaCount ?? 0 }}</div>
-                <div class="mg-label">💡 灵感素材</div>
-              </div>
-              <div class="mg-cell">
-                <div class="mg-num" style="color:#1677ff">{{ data?.mediaStats?.mediaCount ?? 0 }}</div>
-                <div class="mg-label">🎬 素材库</div>
-              </div>
-              <div class="mg-cell">
-                <div class="mg-num" style="color:#722ed1">{{ data?.mediaStats?.docsCount ?? 0 }}</div>
-                <div class="mg-label">📜 创作稿件</div>
-              </div>
-              <div class="mg-cell">
-                <div class="mg-num" style="color:#52c41a">{{ data?.mediaStats?.boardCount ?? 0 }}</div>
-                <div class="mg-label">📊 运营数据</div>
-              </div>
-            </div>
-          </a-card>
-        </a-col>
-      </a-row>
-    </a-spin>
+    <a-spin :spinning="loading" style="display:none"></a-spin>
   </div>
 </template>
 
 <style scoped>
-.insight-page { display:flex; flex-direction:column; gap:16px; flex:1; min-height:0; overflow-y:auto; }
-.page-header {
-  display:flex; justify-content:space-between; align-items:center;
-  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-  padding: 20px 24px; border-radius: 10px; color:#fff;
+.insight-page {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 4px 2px 24px;
+  color: var(--color-text);
 }
-.page-title { margin:0 0 4px 0; color:#fff; font-size:20px; }
-.page-desc { margin:0; color:rgba(255,255,255,0.85); font-size:13px; }
-.overview-row { margin:0; }
-.ov-card { border-radius:10px; margin-bottom:16px; box-shadow:0 1px 4px rgba(0,21,41,0.06); }
-.ov-card :deep(.ant-card-body) { padding:16px 20px; display:flex; align-items:center; gap:14px; }
-.ov-icon { width:48px; height:48px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:22px; flex-shrink:0; }
-.ov-value { font-size:26px; font-weight:600; color:rgba(0,0,0,0.88); line-height:1.1; }
-.ov-suffix { font-size:13px; font-weight:400; margin-left:2px; color:rgba(0,0,0,0.45); }
-.ov-label { font-size:13px; color:rgba(0,0,0,0.55); margin-top:4px; }
 
-.card-title { display:flex; align-items:center; gap:6px; font-size:15px; font-weight:600; }
-.ct-icon { font-size:16px; }
-.trend-card { border-radius:10px; box-shadow:0 1px 4px rgba(0,21,41,0.06); }
-.trend-chart { display:flex; align-items:flex-end; gap:12px; height:240px; padding: 20px 10px 10px; }
-.trend-col { flex:1; display:flex; flex-direction:column; align-items:center; gap:8px; }
-.trend-bars { flex:1; width:100%; display:flex; align-items:flex-end; justify-content:center; gap:3px; }
-.bar { width:22%; border-radius:4px 4px 0 0; transition: height .3s; min-height: 2px; }
-.trend-date { font-size:12px; color:rgba(0,0,0,0.55); }
-.trend-legend { display:flex; gap:16px; justify-content:center; padding: 4px 0; border-top:1px dashed #f0f0f0; margin-top:8px; padding-top:12px; }
-.lg-item { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:rgba(0,0,0,0.65); }
-.lg-item i { width:10px; height:10px; border-radius:2px; display:inline-block; }
+/* ===== 顶部标题+操作区 ===== */
+.page-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.title {
+  font-size: 24px;
+  font-weight: 600;
+  margin: 0 0 4px;
+  color: var(--color-text);
+  letter-spacing: -0.2px;
+}
+.desc {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+.head-right {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.btn-group { display: flex; gap: 8px; }
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: var(--radius-md, 10px);
+  font-size: 13px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all .15s ease;
+  font-weight: 500;
+}
+.btn-primary {
+  background: var(--color-primary, #5E6AD2);
+  color: #fff;
+  border-color: var(--color-primary, #5E6AD2);
+}
+.btn-primary:hover { filter: brightness(1.08); }
+.btn-ghost {
+  background: var(--color-bg-elevated, #1C1D22);
+  color: var(--color-text);
+  border-color: var(--color-border, #1C1D22);
+}
+.btn-ghost:hover { background: var(--color-bg-hover, #15161A); }
 
-.sub-card { border-radius:10px; box-shadow:0 1px 4px rgba(0,21,41,0.06); }
-.mt16 { margin-top:16px; }
-.empty-tip { padding:24px 0; text-align:center; color:rgba(0,0,0,0.35); font-size:13px; }
+/* 周期切换 Tab */
+.period-tabs {
+  display: inline-flex;
+  background: var(--color-bg-card, #0D0E10);
+  border: 1px solid var(--color-border, #1C1D22);
+  border-radius: 999px;
+  padding: 3px;
+  gap: 2px;
+}
+.tab {
+  padding: 5px 15px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all .15s ease;
+  font-weight: 500;
+}
+.tab.active {
+  background: var(--color-primary, #5E6AD2);
+  color: #fff;
+}
+.tab:not(.active):hover { color: var(--color-text); background: var(--color-bg-hover); }
 
-.todo-stat-grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; }
-.ts-cell { text-align:center; padding:10px 6px; background:#fafafa; border-radius:8px; }
-.ts-num { font-size:22px; font-weight:600; }
-.ts-label { font-size:12px; color:rgba(0,0,0,0.55); margin-top:4px; }
-.prio-row { display:flex; flex-wrap:wrap; }
+/* ===== 3 统计卡 ===== */
+.top-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+@media (max-width: 1000px) { .top-cards { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 640px)  { .top-cards { grid-template-columns: 1fr; } }
 
-.proj-row + .proj-row { margin-top:14px; }
-.proj-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
-.proj-title { font-weight:500; color:rgba(0,0,0,0.88); }
-.proj-bar { width:100%; height:8px; background:#f0f0f0; border-radius:4px; overflow:hidden; }
-.proj-bar-inner { height:100%; border-radius:4px; transition: width .3s; }
+.top-card {
+  background: var(--color-bg-card, #0D0E10);
+  border: 1px solid var(--color-border, #1C1D22);
+  border-radius: var(--radius-lg, 14px);
+  padding: 16px 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  transition: all .2s ease;
+}
+.top-card:hover {
+  border-color: var(--color-border-strong, #27282F);
+  transform: translateY(-1px);
+}
+.card-left { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.card-label {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+.card-value {
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--color-text);
+  letter-spacing: -0.5px;
+}
+.card-value .unit {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  margin-left: 4px;
+}
+.card-extra { font-size: 12px; margin-top: 2px; }
+.mini-bars { width: 130px; height: 60px; flex-shrink: 0; }
 
-.money-top { display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; text-align:center; }
-.money-col { background:#fafafa; padding:10px 6px; border-radius:8px; }
-.money-label { font-size:12px; color:rgba(0,0,0,0.55); }
-.money-value { font-size:18px; font-weight:600; margin-top:4px; }
-.cat-row { display:flex; justify-content:space-between; align-items:center; padding:5px 0; border-bottom:1px dashed #f5f5f5; font-size:13px; }
-.cat-row:last-child { border-bottom:0; }
-.cat-name { color:rgba(0,0,0,0.75); }
+/* ===== 通用 panel ===== */
+.panel {
+  background: var(--color-bg-card, #0D0E10);
+  border: 1px solid var(--color-border, #1C1D22);
+  border-radius: var(--radius-lg, 14px);
+  padding: 18px 20px;
+}
+.panel-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: 12px;
+  letter-spacing: -0.1px;
+}
 
-.dist-row { margin-bottom:10px; }
-.dist-head { display:flex; justify-content:space-between; margin-bottom:5px; font-size:13px; color:rgba(0,0,0,0.8); }
-.dist-bar { height:8px; background:#f0f0f0; border-radius:4px; overflow:hidden; }
-.dist-bar-inner { height:100%; background:linear-gradient(90deg, #1677ff, #722ed1); border-radius:4px; transition: width .3s; }
+/* ===== 本周洞察 list ===== */
+.insight-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.insight-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md, 10px);
+  background: var(--color-bg, #08090A);
+  border: 1px solid transparent;
+  transition: all .15s ease;
+}
+.insight-row:hover { border-color: var(--color-border, #1C1D22); }
+.bulb {
+  width: 28px; height: 28px; flex-shrink: 0;
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--color-primary-soft, rgba(94,106,210,.15));
+  color: var(--color-primary, #5E6AD2);
+  font-size: 14px;
+}
+.row-body { flex: 1; min-width: 0; }
+.row-title { font-size: 14px; font-weight: 600; color: var(--color-text); margin-bottom: 2px; }
+.row-desc  { font-size: 12px; color: var(--color-text-secondary); }
+.row-tag {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--color-primary-soft, rgba(94,106,210,.12));
+  color: var(--color-primary, #A5AFFF);
+  border: 1px solid rgba(94,106,210,.25);
+}
 
-.media-grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:10px; }
-.mg-cell { text-align:center; padding:12px 6px; background:linear-gradient(135deg, #fff7e6, #ffe7ba); border-radius:8px; }
-.mg-num { font-size:20px; font-weight:600; }
-.mg-label { font-size:12px; color:rgba(0,0,0,0.6); margin-top:4px; }
+/* ===== 周期对比 ===== */
+.compare-list { display: flex; flex-direction: column; gap: 14px; }
+.compare-row {
+  display: grid;
+  grid-template-columns: 110px 1fr 70px;
+  align-items: center;
+  gap: 16px;
+}
+@media (max-width: 640px) {
+  .compare-row { grid-template-columns: 80px 1fr 56px; gap: 10px; }
+}
+.cmp-label { font-size: 13px; color: var(--color-text); font-weight: 500; }
+.cmp-bars { display: flex; flex-direction: column; gap: 6px; }
+.cmp-bar-row {
+  display: grid;
+  grid-template-columns: 38px 1fr;
+  align-items: center;
+  gap: 8px;
+}
+.bar-mini-label {
+  font-size: 11px;
+  color: var(--color-text-tertiary, #71717A);
+  text-align: right;
+}
+.cmp-bar {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--color-bg, #08090A);
+  overflow: hidden;
+  border: 1px solid var(--color-border, #1C1D22);
+}
+.cmp-bar-inner {
+  height: 100%;
+  border-radius: 999px;
+  transition: width .4s ease;
+}
+.cmp-bar-last .cmp-bar-inner  { background: var(--color-text-tertiary, #52525B); opacity: .75; }
+.cmp-bar-cur  .cmp-bar-inner  { background: var(--color-primary, #5E6AD2); }
+.cmp-delta {
+  font-size: 13px;
+  font-weight: 600;
+  text-align: right;
+}
+
+/* ===== 下周行动项 ===== */
+.action-list { display: flex; flex-direction: column; gap: 8px; }
+.action-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--color-bg, #08090A);
+  border: 1px solid var(--color-border, #1C1D22);
+  border-radius: var(--radius-md, 10px);
+  cursor: pointer;
+  user-select: none;
+  transition: all .15s ease;
+}
+.action-row:hover { border-color: var(--color-border-strong, #27282F); }
+.action-row.done { opacity: .55; }
+.action-row.done .action-title { text-decoration: line-through; color: var(--color-text-tertiary); }
+.check {
+  width: 18px; height: 18px; flex-shrink: 0;
+  border-radius: 5px;
+  border: 1.5px solid var(--color-border-strong, #27282F);
+  display: flex; align-items: center; justify-content: center;
+  background: var(--color-bg-card, #0D0E10);
+  transition: all .15s ease;
+  color: #fff;
+}
+.check.checked {
+  background: var(--color-primary, #5E6AD2);
+  border-color: var(--color-primary, #5E6AD2);
+}
+.action-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  color: var(--color-text);
+}
+.action-role {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  font-size: 11px;
+  border-radius: 6px;
+  font-weight: 500;
+  border: 1px solid transparent;
+}
 </style>

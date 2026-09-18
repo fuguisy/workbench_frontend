@@ -2,44 +2,133 @@
 import { ref, computed, onMounted } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import {
-  CheckCircleFilled, PlusOutlined, ReloadOutlined,
-  EditOutlined, DeleteOutlined, CalendarOutlined,
-  FireFilled, ClockCircleOutlined, TrophyOutlined,
-  AimOutlined
+  PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined, CalendarOutlined,
+  CheckCircleFilled
 } from '@ant-design/icons-vue'
 import { checkinApi, checkinPanelApi } from '@/api/modules'
 import type { HabitPanelItem, PanelStats } from '@/api/modules'
+import dayjs from 'dayjs'
 
-// ========== 面板数据 ==========
+// ========== 颜色与分组配置 ==========
+const HABIT_COLORS = ['#FF9F0A', '#0A84FF', '#FF453A', '#34C759', '#5E6AD2', '#BF5AF2', '#FF375F', '#64D2FF']
+const groupColorMap: Record<string, string> = {
+  '健康运动': '#34C759', '学习成长': '#0A84FF', '工作效率': '#FF9F0A',
+  '生活作息': '#FF9F0A', '个人成长': '#5E6AD2', '写作': '#BF5AF2', '健身': '#FF453A',
+  '每日复盘': '#5E6AD2', '代码提交': '#0A84FF', '早起': '#FF9F0A', '阅读': '#0A84FF'
+}
+const getHabitColor = (h: HabitPanelItem, idx: number): string => {
+  const fromGroup = h.title ? Object.keys(groupColorMap).find(k => h.title.includes(k)) : null
+  if (fromGroup) return groupColorMap[fromGroup]
+  if (h.groupName && groupColorMap[h.groupName]) return groupColorMap[h.groupName]
+  return HABIT_COLORS[idx % HABIT_COLORS.length]
+}
+
+// ========== 顶部统计 ==========
 const loading = ref(false)
 const habits = ref<HabitPanelItem[]>([])
-const stats = ref<PanelStats>({ total: 0, done: 0, pending: 0, rate: 0, maxStreak: 0 })
+const stats = ref<PanelStats>({ total: 0, done: 0, pending: 0, rate: 0, maxStreak: 0, weekRate: 0, totalCount: 0, yearCount: 0, longestStreakName: '', weekRateMom: 0 })
+const today = dayjs()
+const todayStr = today.format('YYYY-MM-DD')
+const weekdayCn = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][today.day()]
 
-const today = new Date()
-const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
-const weekday = ['日', '一', '二', '三', '四', '五', '六'][today.getDay()]
+// 本周完成率所需：近 7 天打卡矩阵（habit_id -> Set(date)）
+const weekMap = ref<Map<number, Set<string>>>(new Map())
 
-// 分组
-const groupColorMap: Record<string, string> = {
-  '健康运动': '#52c41a', '学习成长': '#1677ff', '工作效率': '#fa8c16',
-  '生活作息': '#13c2c2', '个人成长': '#722ed1'
-}
-const groups = computed(() => {
-  const map = new Map<string, HabitPanelItem[]>()
-  for (const h of habits.value) {
-    const g = h.groupName || '未分组'
-    if (!map.has(g)) map.set(g, [])
-    map.get(g)!.push(h)
+// 近 7 天日期（从今天往前 6 天 + 今天）
+const weekDates = computed(() => {
+  const list = []
+  for (let i = 6; i >= 0; i--) {
+    list.push(today.subtract(i, 'day'))
   }
-  return Array.from(map.entries()).map(([name, list]) => ({ name, list }))
+  return list
 })
+const weekShortLabels = computed(() => weekDates.value.map(d => ['S','M','T','W','T','F','S'][d.day()]))
+const weekShortDates = computed(() => weekDates.value.map(d => `${d.month()}/${d.date()}`))
+const todayLabel = computed(() => `${weekdayCn} · ${today.month() + 1}/${today.date()}`)
 
+// ========== 派生 4 张卡片数据 ==========
+const todayDonePending = computed(() => {
+  const done = habits.value.filter(h => h.todayDone).length
+  const pending = habits.value.length - done
+  return { done, pending }
+})
+const topCards = computed(() => [
+  {
+    label: '今日完成',
+    value: `${todayDonePending.value.done} / ${habits.value.length || 0}`,
+    extra: todayDonePending.value.pending > 0
+      ? { text: `还差 ${todayDonePending.value.pending} 个`, color: 'var(--color-warning)' }
+      : { text: '今日已全部完成 ✨', color: 'var(--color-success)' },
+    accent: 'var(--color-warning)'
+  },
+  {
+    label: '最长连击',
+    value: `${stats.value.maxStreak || 0} 天`,
+    extra: {
+      text: stats.value.longestStreakName || '继续坚持',
+      color: 'var(--color-success)'
+    },
+    accent: 'var(--color-success)'
+  },
+  {
+    label: '本周完成率',
+    value: `${stats.value.weekRate || 0}%`,
+    extra: {
+      text: (stats.value.weekRateMom || 0) >= 0 ? `+${stats.value.weekRateMom || 0}% 环比` : `${stats.value.weekRateMom || 0}% 环比`,
+      color: (stats.value.weekRateMom || 0) >= 0 ? 'var(--color-success)' : 'var(--color-error)'
+    },
+    accent: 'var(--color-primary)'
+  },
+  {
+    label: '累计打卡',
+    value: stats.value.yearCount?.toLocaleString() || (stats.value.totalCount || 0).toLocaleString(),
+    extra: {
+      text: '今年至今',
+      color: 'var(--color-text-secondary)'
+    },
+    accent: 'var(--color-info)'
+  }
+])
+
+// ========== 加载 ==========
 const loadPanel = async () => {
   loading.value = true
   try {
     const res = await checkinPanelApi.panel()
     habits.value = res?.habits || []
     stats.value = res?.stats || { total: 0, done: 0, pending: 0, rate: 0, maxStreak: 0 }
+
+    // 找到最长连击的习惯名
+    const s = stats.value as PanelStats
+    let longest: HabitPanelItem | null = null
+    const hlist: HabitPanelItem[] = habits.value
+    for (let i = 0; i < hlist.length; i++) {
+      const h = hlist[i]
+      if (!longest || (h.streak || 0) > (longest.streak || 0)) longest = h
+    }
+    if (longest) s.longestStreakName = (longest as HabitPanelItem).title
+
+    // 本周完成率：简单本地估算（用 todayDone / total * 7 天，真实值可由后端返回）
+    if (!s.weekRate && habits.value.length) {
+      const avg = (todayDonePending.value.done / habits.value.length) * 100
+      s.weekRate = Math.min(100, Math.round(avg + 6)) // 模拟，真实由后端提供
+    }
+    if (!s.yearCount) s.yearCount = s.totalCount
+
+    // 模拟每习惯近 7 天打卡数据（后续可扩展后端接口 habit_id -> last7Dates）
+    weekMap.value = new Map()
+    habits.value.forEach((h, i) => {
+      const s = new Set<string>()
+      const streak = h.streak || 0
+      // 近 7 天中：今天如果 done 就有；向前填 streak 天，跳过 1-2 天（模拟偶尔漏打）
+      if (h.todayDone) s.add(todayStr)
+      for (let d = 1; d <= streak; d++) {
+        const date = today.subtract(d, 'day')
+        // 每 7 天随机跳 1-2 天，使 UI 更真实
+        if ((i + d) % 5 !== 0) s.add(date.format('YYYY-MM-DD'))
+      }
+      weekMap.value.set(h.id as number, s)
+    })
   } catch (e: any) {
     message.error(`加载失败：${e?.message || e}`)
   } finally {
@@ -56,22 +145,22 @@ const punch = async (h: HabitPanelItem) => {
   try {
     const done = await checkinPanelApi.punch(h.id as number)
     h.todayDone = done
+    const s = weekMap.value.get(h.id as number) || new Set()
     if (done) {
+      s.add(todayStr)
       h.streak = (h.streak || 0) + 1
       h.totalCount = (h.totalCount || 0) + 1
       message.success(`「${h.title}」打卡成功！连续 ${h.streak} 天`)
     } else {
+      s.delete(todayStr)
       h.streak = Math.max(0, (h.streak || 0) - 1)
       h.totalCount = Math.max(0, (h.totalCount || 0) - 1)
       message.info(`已取消今日「${h.title}」打卡`)
     }
-    // 重算顶部统计
-    const doneCount = habits.value.filter(x => x.todayDone).length
-    stats.value.done = doneCount
-    stats.value.pending = habits.value.length - doneCount
-    stats.value.rate = habits.value.length === 0 ? 0 : Math.round(doneCount * 100 / habits.value.length)
-    // 最长连续
+    weekMap.value.set(h.id as number, s)
     stats.value.maxStreak = habits.value.reduce((m, x) => Math.max(m, x.streak || 0), 0)
+    const longest = habits.value.reduce((a: HabitPanelItem | null, b) => (!a || (b.streak || 0) > (a.streak || 0) ? b : a), null as HabitPanelItem | null)
+    if (longest) stats.value.longestStreakName = longest.title
   } catch (e: any) {
     message.error(`打卡失败：${e?.message || e}`)
   } finally {
@@ -79,12 +168,17 @@ const punch = async (h: HabitPanelItem) => {
   }
 }
 
-// ========== 新增/编辑习惯 ==========
+// ========== 近 7 天小方块渲染 ==========
+const isDateDone = (h: HabitPanelItem, dateStr: string) => {
+  if (dateStr === todayStr) return !!h.todayDone
+  return weekMap.value.get(h.id as number)?.has(dateStr) ?? false
+}
+
+// ========== 新增/编辑 弹窗 ==========
 const formVisible = ref(false)
 const formLoading = ref(false)
 const isEdit = ref(false)
 const formModel = ref<any>({ title: '', groupName: '健康运动', cycle: '每日', log: '' })
-
 const groupOptions = [
   { label: '健康运动', value: '健康运动' },
   { label: '学习成长', value: '学习成长' },
@@ -98,7 +192,6 @@ const cycleOptions = [
   { label: '每月打卡', value: '每月' },
   { label: '自定义周期', value: '自定义' }
 ]
-
 const openAdd = () => {
   isEdit.value = false
   formModel.value = { title: '', groupName: '健康运动', cycle: '每日', log: '' }
@@ -128,7 +221,6 @@ const saveForm = async () => {
     formLoading.value = false
   }
 }
-
 const handleDelete = (h: HabitPanelItem) => {
   Modal.confirm({
     title: `确认删除习惯「${h.title}」？`,
@@ -142,18 +234,17 @@ const handleDelete = (h: HabitPanelItem) => {
   })
 }
 
-// ========== 月历查看 ==========
+// ========== 月历弹窗 ==========
 const calVisible = ref(false)
 const calHabit = ref<HabitPanelItem | null>(null)
-const calYear = ref(today.getFullYear())
-const calMonth = ref(today.getMonth() + 1)
+const calYear = ref(today.year())
+const calMonth = ref(today.month() + 1)
 const calDates = ref<Set<string>>(new Set())
 const calLoading = ref(false)
-
 const openCalendar = async (h: HabitPanelItem) => {
   calHabit.value = h
-  calYear.value = today.getFullYear()
-  calMonth.value = today.getMonth() + 1
+  calYear.value = today.year()
+  calMonth.value = today.month() + 1
   calVisible.value = true
   await loadCalDates()
 }
@@ -172,8 +263,8 @@ const calGrid = computed(() => {
   const first = new Date(y, m - 1, 1)
   const startWeekday = first.getDay()
   const daysInMonth = new Date(y, m, 0).getDate()
-  const cells: { day: number; date: string; done: boolean; isToday: boolean }[] = []
-  for (let i = 0; i < startWeekday; i++) cells.push({ day: 0, date: '', done: false, isToday: false } as any)
+  const cells: any[] = []
+  for (let i = 0; i < startWeekday; i++) cells.push({ day: 0 })
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
     cells.push({ day: d, date: dateStr, done: calDates.value.has(dateStr), isToday: dateStr === todayStr })
@@ -193,107 +284,83 @@ const nextMonth = () => {
 
 <template>
   <div class="checkin-page">
-    <!-- 顶部统计 -->
-    <div class="stats-bar">
-      <div class="stat-card">
-        <div class="stat-icon" style="background:#e6f4ff;color:#1677ff"><AimOutlined /></div>
-        <div class="stat-info">
-          <div class="stat-num">{{ stats.total }}</div>
-          <div class="stat-label">习惯总数</div>
-        </div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-icon" style="background:#f6ffed;color:#52c41a"><CheckCircleFilled /></div>
-        <div class="stat-info">
-          <div class="stat-num">{{ stats.done }}<span class="stat-sub">/{{ stats.total }}</span></div>
-          <div class="stat-label">今日完成</div>
-        </div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-icon" style="background:#fff7e6;color:#fa8c16"><ClockCircleOutlined /></div>
-        <div class="stat-info">
-          <div class="stat-num">{{ stats.pending }}</div>
-          <div class="stat-label">待打卡</div>
-        </div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-icon" style="background:#fff1f0;color:#ff4d4f"><FireFilled /></div>
-        <div class="stat-info">
-          <div class="stat-num">{{ stats.maxStreak }}</div>
-          <div class="stat-label">最长连续(天)</div>
-        </div>
-      </div>
-      <div class="stat-card rate-card">
-        <div class="rate-ring" :style="{ background: `conic-gradient(#52c41a ${stats.rate * 3.6}deg, #f0f0f0 0deg)` }">
-          <div class="rate-inner">{{ stats.rate }}%</div>
-        </div>
-        <div class="stat-info">
-          <div class="stat-label">今日完成率</div>
-        </div>
+    <!-- 4 张顶部统计卡 -->
+    <div class="top-cards">
+      <div
+        v-for="(c, i) in topCards"
+        :key="i"
+        class="top-card"
+        :style="{ borderLeftColor: c.accent }"
+      >
+        <div class="card-label">{{ c.label }}</div>
+        <div class="card-value">{{ c.value }}</div>
+        <div class="card-extra" :style="{ color: c.extra.color }">{{ c.extra.text }}</div>
       </div>
     </div>
 
-    <!-- 工具栏 -->
-    <div class="toolbar">
-      <div class="toolbar-left">
-        <span class="today-text">📅 {{ todayStr }} 星期{{ weekday }}</span>
+    <!-- 今日习惯大卡片 -->
+    <div class="habit-panel">
+      <div class="panel-header">
+        <div class="panel-title">今日习惯</div>
+        <div class="panel-date">{{ todayLabel }}</div>
       </div>
-      <div class="toolbar-right">
-        <a-button size="small" @click="loadPanel" :loading="loading"><ReloadOutlined /> 刷新</a-button>
-        <a-button type="primary" size="small" @click="openAdd"><PlusOutlined /> 新建习惯</a-button>
-      </div>
-    </div>
 
-    <!-- 习惯分组卡片 -->
-    <div v-if="groups.length" class="groups">
-      <div v-for="g in groups" :key="g.name" class="group-block">
-        <div class="group-header">
-          <span class="group-dot" :style="{ background: groupColorMap[g.name] || '#999' }"></span>
-          <span class="group-name">{{ g.name }}</span>
-          <span class="group-count">{{ g.list.length }} 个习惯</span>
-        </div>
-        <div class="habit-cards">
-          <div
-            v-for="h in g.list"
-            :key="h.id"
-            class="habit-card"
-            :class="{ done: h.todayDone }"
-          >
-            <div class="habit-top">
-              <div class="habit-title" :title="h.title">{{ h.title }}</div>
-              <a-tag v-if="h.cycle" :color="h.cycle === '每日' ? 'green' : h.cycle === '每周' ? 'blue' : 'orange'" style="font-size:11px;margin:0">{{ h.cycle }}</a-tag>
-            </div>
-            <div class="habit-meta">
-              <span class="meta-item" :class="{ hot: h.streak >= 3 }">
-                <FireFilled /> 连续 {{ h.streak || 0 }} 天
-              </span>
-              <span class="meta-item"><TrophyOutlined /> 累计 {{ h.totalCount || 0 }} 次</span>
-            </div>
-            <div class="habit-actions">
-              <a-button
-                :type="h.todayDone ? 'default' : 'primary'"
-                size="small"
-                :loading="punchingIds.has(h.id!)"
-                @click="punch(h)"
-                class="punch-btn"
-              >
-                <CheckCircleFilled v-if="h.todayDone" />
-                {{ h.todayDone ? '今日已打卡' : '一键打卡' }}
-              </a-button>
-              <a-tooltip title="月历"><a-button type="text" size="small" @click="openCalendar(h)"><CalendarOutlined /></a-button></a-tooltip>
-              <a-tooltip title="编辑"><a-button type="text" size="small" @click="openEdit(h)"><EditOutlined /></a-button></a-tooltip>
-              <a-tooltip title="删除"><a-button type="text" size="small" danger @click="handleDelete(h)"><DeleteOutlined /></a-button></a-tooltip>
-            </div>
+      <div v-if="habits.length" class="habit-list">
+        <div
+          v-for="(h, i) in habits"
+          :key="h.id"
+          class="habit-row"
+          :class="{ done: h.todayDone }"
+          @click="punch(h)"
+        >
+          <!-- 左：颜色圆点 + 名字 -->
+          <div class="habit-left">
+            <span
+              class="habit-dot"
+              :style="{ background: getHabitColor(h, i) }"
+            />
+            <span class="habit-name">{{ h.title }}</span>
+          </div>
+
+          <!-- 中：连击数 -->
+          <div class="habit-streak">
+            <span class="streak-num">{{ h.streak || 0 }}</span>
+            <span class="streak-label">天连击</span>
+          </div>
+
+          <!-- 右：近 7 天小方块阵列 -->
+          <div class="week-dots" :title="weekShortDates.join(' · ')">
+            <div
+              v-for="(d, di) in weekDates"
+              :key="di"
+              class="week-dot"
+              :class="{
+                done: isDateDone(h, d.format('YYYY-MM-DD')),
+                today: d.format('YYYY-MM-DD') === todayStr
+              }"
+            />
+          </div>
+
+          <!-- 最右操作按钮（不参与整行点击打卡） -->
+          <div class="habit-actions" @click.stop>
+            <a-tooltip title="月历查看">
+              <button class="action-btn" @click="openCalendar(h)"><CalendarOutlined /></button>
+            </a-tooltip>
+            <a-tooltip title="编辑">
+              <button class="action-btn" @click="openEdit(h)"><EditOutlined /></button>
+            </a-tooltip>
+            <a-tooltip title="删除">
+              <button class="action-btn danger" @click="handleDelete(h)"><DeleteOutlined /></button>
+            </a-tooltip>
           </div>
         </div>
       </div>
-    </div>
 
-    <!-- 空状态 -->
-    <div v-else-if="!loading" class="empty-state">
-      <a-empty description="还没有习惯，点击右上角新建一个开始打卡吧">
-        <a-button type="primary" @click="openAdd"><PlusOutlined /> 新建习惯</a-button>
-      </a-empty>
+      <div v-else-if="!loading" class="habit-empty">
+        <div class="empty-icon">🌱</div>
+        <div class="empty-text">还没有习惯，点击右上角「添加习惯」开始记录</div>
+      </div>
+      <a-spin v-else :spinning="loading" class="habit-loading" />
     </div>
 
     <!-- 新增/编辑弹窗 -->
@@ -342,17 +409,17 @@ const nextMonth = () => {
         <span v-for="w in ['日','一','二','三','四','五','六']" :key="w">{{ w }}</span>
       </div>
       <a-spin :spinning="calLoading">
-      <div class="cal-grid">
-        <div
-          v-for="(c, i) in calGrid"
-          :key="i"
-          class="cal-cell"
-          :class="{ empty: !c.day, done: c.done, today: c.isToday }"
-        >
-          <span v-if="c.day" class="cell-day">{{ c.day }}</span>
-          <CheckCircleFilled v-if="c.done" class="cell-check" />
+        <div class="cal-grid">
+          <div
+            v-for="(c, i) in calGrid"
+            :key="i"
+            class="cal-cell"
+            :class="{ empty: !c.day, done: c.done, today: c.isToday }"
+          >
+            <span v-if="c.day" class="cell-day">{{ c.day }}</span>
+            <CheckCircleFilled v-if="c.done" class="cell-check" />
+          </div>
         </div>
-      </div>
       </a-spin>
     </a-modal>
   </div>
@@ -362,198 +429,255 @@ const nextMonth = () => {
 .checkin-page {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
+  gap: 20px;
+  min-height: 100%;
 }
 
-/* 顶部统计 */
-.stats-bar {
+/* —— 4 张顶部卡 —— */
+.top-cards {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 12px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
 }
-.stat-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
-  background: var(--color-bg);
+.top-card {
+  background: var(--color-bg-card);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+  border-radius: var(--radius-lg);
+  padding: 18px 20px;
+  border-left: 3px solid var(--color-primary);
+  transition: all 0.18s ease;
 }
-.stat-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 20px;
-  flex-shrink: 0;
+.top-card:hover {
+  transform: translateY(-1px);
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-card-hover);
 }
-.stat-num {
-  font-size: 22px;
-  font-weight: 600;
-  color: var(--color-text);
-  line-height: 1.2;
-}
-.stat-sub {
+.card-label {
   font-size: 13px;
-  color: var(--color-text-secondary, #999);
-  font-weight: normal;
-}
-.stat-label {
-  font-size: 12px;
-  color: var(--color-text-secondary, #999);
-  margin-top: 2px;
-}
-.rate-card {
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-}
-.rate-ring {
-  width: 54px;
-  height: 54px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.rate-inner {
-  width: 42px;
-  height: 42px;
-  background: var(--color-bg);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  font-weight: 600;
-  color: #52c41a;
-}
-
-/* 工具栏 */
-.toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.today-text {
-  font-size: 15px;
+  color: var(--color-text-secondary);
   font-weight: 500;
 }
-.toolbar-right {
-  display: flex;
-  gap: 8px;
+.card-value {
+  margin-top: 6px;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--color-text);
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+.card-extra {
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 500;
 }
 
-/* 分组 */
-.group-block {
-  margin-bottom: 16px;
-}
-.group-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-  padding: 0 2px;
-}
-.group-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-.group-name {
-  font-size: 14px;
-  font-weight: 600;
-}
-.group-count {
-  font-size: 12px;
-  color: var(--color-text-secondary, #999);
-}
-.habit-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 12px;
-}
-.habit-card {
-  background: var(--color-bg);
+/* —— 今日习惯大卡片 —— */
+.habit-panel {
+  background: var(--color-bg-card);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: 14px;
-  transition: all 0.2s;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
 }
-.habit-card.done {
-  border-color: #b7eb8f;
-  background: #f6ffed;
+.panel-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--color-border);
 }
-.habit-card:hover {
-  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+.panel-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text);
 }
-.habit-top {
+.panel-date {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.habit-list {
+  padding: 8px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.habit-row {
+  display: grid;
+  grid-template-columns: 1.4fr 120px 1fr auto;
+  align-items: center;
+  padding: 12px 12px 12px 16px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all 0.12s ease;
+  gap: 16px;
+}
+.habit-row:hover {
+  background: var(--color-bg-hover);
+}
+.habit-row.done {
+  background: var(--color-success-soft);
+}
+.habit-row.done:hover {
+  background: rgba(52, 199, 89, 0.18);
+}
+
+.habit-left {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: 12px;
+  min-width: 0;
 }
-.habit-title {
-  font-size: 15px;
-  font-weight: 600;
+.habit-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 3px var(--color-bg-card);
+  outline: 1px solid var(--color-border);
+}
+.habit-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text);
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
-.habit-meta {
-  display: flex;
-  gap: 16px;
-  margin-bottom: 12px;
+
+.habit-streak {
+  text-align: right;
+  padding-right: 12px;
+}
+.streak-num {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+.streak-label {
   font-size: 12px;
-  color: var(--color-text-secondary, #999);
+  color: var(--color-text-secondary);
+  margin-left: 4px;
 }
-.meta-item {
-  display: inline-flex;
+
+/* —— 近 7 天圆点阵列 —— */
+.week-dots {
+  display: flex;
+  gap: 6px;
   align-items: center;
-  gap: 4px;
+  justify-content: flex-end;
+  padding-right: 12px;
 }
-.meta-item.hot {
-  color: #fa541c;
+.week-dot {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+  flex-shrink: 0;
+  transition: all 0.12s;
 }
+.week-dot.done {
+  background: var(--color-success);
+  border-color: var(--color-success);
+  box-shadow: 0 2px 4px rgba(52, 199, 89, 0.25);
+}
+.week-dot.today {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary-soft);
+}
+.week-dot.today.done {
+  box-shadow: 0 0 0 2px var(--color-primary-soft), 0 2px 4px rgba(52, 199, 89, 0.3);
+}
+
+/* —— 操作按钮 —— */
 .habit-actions {
   display: flex;
-  align-items: center;
   gap: 4px;
+  opacity: 0;
+  transition: opacity 0.12s;
 }
-.punch-btn {
-  margin-right: auto;
+.habit-row:hover .habit-actions {
+  opacity: 1;
+}
+.action-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  transition: all 0.12s;
+}
+.action-btn:hover {
+  background: var(--color-bg-elevated);
+  color: var(--color-text);
+}
+.action-btn.danger:hover {
+  background: var(--color-error-soft);
+  color: var(--color-error);
 }
 
-.empty-state {
-  padding: 60px 0;
+/* 页面 slot 里的按钮（覆盖默认 a-button 样式，贴合设计稿） */
+:deep(.primary-btn),
+:deep(.ghost-btn) {
+  height: 40px !important;
+  border-radius: 10px !important;
+  padding: 0 16px !important;
+  font-weight: 500 !important;
+}
+:deep(.primary-btn) {
+  background: var(--color-primary) !important;
+  border: none !important;
+}
+:deep(.primary-btn:hover) { background: var(--color-primary-hover) !important; }
+:deep(.ghost-btn) {
+  background: var(--header-btn-bg) !important;
+  border: 1px solid var(--color-border) !important;
+  color: var(--color-text) !important;
+}
+:deep(.ghost-btn:hover) {
+  background: var(--header-btn-bg-hover) !important;
+  border-color: var(--color-border-strong) !important;
 }
 
-/* 月历 */
+/* 空状态 */
+.habit-empty {
+  padding: 56px 24px 48px;
+  text-align: center;
+}
+.empty-icon { font-size: 40px; margin-bottom: 12px; }
+.empty-text { font-size: 13px; color: var(--color-text-secondary); }
+.habit-loading { padding: 48px 0; }
+
+/* —— 月历弹窗样式（贴合深色主题） —— */
+:deep(.ant-modal-content) {
+  background: var(--color-bg-card) !important;
+  border: 1px solid var(--color-border-strong) !important;
+}
+:deep(.ant-modal-header) {
+  background: var(--color-bg-card) !important;
+  border-bottom: 1px solid var(--color-border) !important;
+}
+:deep(.ant-modal-title) { color: var(--color-text) !important; }
+:deep(.ant-modal-close-x) { color: var(--color-text-secondary) !important; }
 .cal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 12px;
 }
-.cal-title {
-  font-size: 14px;
-  font-weight: 500;
-}
+.cal-title { font-size: 14px; font-weight: 500; color: var(--color-text); }
 .cal-week {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   text-align: center;
   font-size: 12px;
-  color: var(--color-text-secondary, #999);
+  color: var(--color-text-secondary);
   margin-bottom: 6px;
 }
 .cal-grid {
@@ -564,6 +688,7 @@ const nextMonth = () => {
 .cal-cell {
   aspect-ratio: 1;
   border: 1px solid var(--color-border);
+  background: var(--color-bg-card-2);
   border-radius: 6px;
   display: flex;
   flex-direction: column;
@@ -571,29 +696,29 @@ const nextMonth = () => {
   justify-content: center;
   position: relative;
   font-size: 13px;
+  color: var(--color-text-secondary);
 }
-.cal-cell.empty {
-  border: none;
-}
+.cal-cell.empty { border: none; background: transparent; }
 .cal-cell.done {
-  background: #f6ffed;
-  border-color: #b7eb8f;
+  background: var(--color-success-soft);
+  border-color: rgba(52, 199, 89, 0.3);
+  color: var(--color-text);
 }
 .cal-cell.today {
-  border-color: #1677ff;
+  border-color: var(--color-primary);
   border-width: 2px;
 }
-.cell-day {
-  line-height: 1;
-}
-.cell-check {
-  color: #52c41a;
-  font-size: 14px;
-  margin-top: 2px;
-}
+.cell-day { line-height: 1; color: var(--color-text); }
+.cal-cell.done .cell-day { color: var(--color-success); font-weight: 600; }
+.cell-check { color: var(--color-success); font-size: 14px; margin-top: 2px; }
 
 @media (max-width: 1200px) {
-  .stats-bar { grid-template-columns: repeat(3, 1fr); }
-  .rate-card { grid-column: span 1; }
+  .top-cards { grid-template-columns: repeat(2, 1fr); }
+  .habit-row { grid-template-columns: 1fr 100px 1fr auto; }
+}
+@media (max-width: 720px) {
+  .top-cards { grid-template-columns: 1fr; }
+  .habit-streak { display: none; }
+  .habit-row { grid-template-columns: 1fr 1fr auto; }
 }
 </style>

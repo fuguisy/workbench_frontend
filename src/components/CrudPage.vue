@@ -9,6 +9,7 @@ export interface CrudConfig {
   columns: CrudColumn[]
   formFields: FormField[]
   searchFields?: SearchField[]
+  extraFilter?: (record: any) => boolean
 }
 
 export interface CrudColumn {
@@ -77,18 +78,26 @@ const pagination = reactive({
 const loadData = async () => {
   loading.value = true
   try {
-    if (hasSearch.value) {
-      // 搜索模式：全量加载 + 前端过滤 + 前端分页
+    if (hasSearch.value || props.config.extraFilter) {
+      // 搜索模式或有外部过滤：全量加载 + 前端过滤 + 前端分页
       const res = await props.config.api.list()
-      const all = res || []
-      dataList.value = all.filter((item: any) => {
-        return props.config.searchFields!.every((field) => {
-          const val = searchParams[field.key]
-          if (!val) return true
-          const itemVal = String(item[field.key] || '').toLowerCase()
-          return itemVal.includes(String(val).toLowerCase())
+      let all = res || []
+      // 应用外部过滤（如月份筛选）
+      if (props.config.extraFilter) {
+        all = all.filter(props.config.extraFilter)
+      }
+      // 应用搜索字段过滤
+      if (hasSearch.value) {
+        all = all.filter((item: any) => {
+          return props.config.searchFields!.every((field) => {
+            const val = searchParams[field.key]
+            if (!val) return true
+            const itemVal = String(item[field.key] || '').toLowerCase()
+            return itemVal.includes(String(val).toLowerCase())
+          })
         })
-      })
+      }
+      dataList.value = all
       pagination.total = dataList.value.length
     } else {
       // 后端分页
@@ -103,9 +112,9 @@ const loadData = async () => {
   }
 }
 
-// 搜索模式下前端切片；后端分页模式下直接返回 dataList
+// 搜索模式或有外部过滤时前端切片；后端分页模式下直接返回 dataList
 const filteredData = computed(() => {
-  if (hasSearch.value) {
+  if (hasSearch.value || props.config.extraFilter) {
     const start = (pagination.current - 1) * pagination.pageSize
     return dataList.value.slice(start, start + pagination.pageSize)
   }

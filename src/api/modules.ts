@@ -155,6 +155,21 @@ export interface Docs {
   createTime?: string
   updateTime?: string
 }
+export interface Lead {
+  id?: number
+  userId?: number
+  title: string
+  source?: string
+  stage?: string
+  contact?: string
+  budget?: number
+  quote?: number
+  nextFollow?: string
+  demand?: string
+  note?: string
+  createTime?: string
+  updateTime?: string
+}
 export interface Checkin {
   id?: number
   userId?: number
@@ -204,6 +219,93 @@ export interface Money {
   updateTime?: string
 }
 
+export interface Notification {
+  id?: number
+  userId?: number
+  title: string
+  content: string
+  type: 'TASK' | 'BUG' | 'DOC' | 'CHECKIN' | 'MONEY' | 'SYSTEM'
+  read?: boolean
+  extra?: string
+  priority?: string
+  date?: string
+  createTime?: string
+  updateTime?: string
+}
+
+export interface CalendarEvent {
+  id?: number
+  userId?: number
+  title: string
+  category: 'WORK' | 'MEDIA' | 'FOCUS' | 'REVIEW' | 'LIFE'
+  location?: string
+  attendees?: string
+  startTime?: string
+  endTime?: string
+  allDay?: boolean
+  priority?: string
+  status?: string
+}
+
+export interface OkrObjective {
+  id?: number
+  userId?: number
+  title: string
+  category: 'WORK' | 'MEDIA' | 'TECH' | 'READ' | 'HEALTH'
+  period?: string
+  currValue?: number
+  targetValue?: number
+  unit?: string
+  startDate?: string
+  endDate?: string
+  status?: string
+  progress?: number
+  score?: number
+  review?: string
+}
+
+export interface OkrKeyResult {
+  id?: number
+  userId?: number
+  objectiveId: number
+  title: string
+  currValue?: number
+  targetValue?: number
+  unit?: string
+  progress?: number
+  progressMode?: 'MANUAL' | 'TASK_LINKED'
+  taskId?: number
+  weight?: number
+  status?: string
+}
+
+export interface FocusRecord {
+  id?: number
+  userId?: number
+  title: string
+  scene: 'DEEP' | 'CREATE' | 'READ' | 'MEET' | 'SPORT'
+  minutesActual?: number
+  minutesStandard?: number
+  pomosExpected?: number
+  status?: 'DOING' | 'DONE' | 'CANCEL'
+  recordDate?: string
+  taskId?: number
+  taskTitle?: string
+}
+
+export interface Subscription {
+  id?: number
+  userId?: number
+  title: string
+  category: 'AI' | 'DEV' | 'CLOUD' | 'OFFICE' | 'ENTERTAINMENT'
+  provider?: string
+  planType?: 'MONTHLY' | 'YEARLY' | 'ONCE'
+  costYuan?: number
+  renewDate?: string
+  autoRenew?: boolean
+  status?: 'ACTIVE' | 'EXPIRING' | 'EXPIRED'
+}
+
 // 任务待办：用 Todo 接口类型 + 复用通用CRUD + 保留 toggleDone
 import type { Todo } from './todo'
 import { toggleTodoDone } from './todo'
@@ -223,6 +325,7 @@ export const ideaApi = createCrud<Idea>('/idea')
 export const mediaApi = createCrud<Media>('/media')
 export const mediaBoardApi = createCrud<MediaBoard>('/media-board')
 export const docsApi = createCrud<Docs>('/docs')
+export const leadApi = createCrud<Lead>('/lead')
 export const checkinApi = createCrud<Checkin>('/checkin')
 
 // 习惯打卡面板扩展接口
@@ -237,6 +340,11 @@ export interface PanelStats {
   pending: number
   rate: number
   maxStreak: number
+  weekRate?: number
+  weekRateMom?: number
+  yearCount?: number
+  totalCount?: number
+  longestStreakName?: string
 }
 export interface PanelData {
   habits: HabitPanelItem[]
@@ -251,6 +359,25 @@ export const checkinPanelApi = {
 export const secretsApi = createCrud<Secrets>('/secrets')
 export const backupApi = createCrud<BackupLog>('/backup')
 export const moneyApi = createCrud<Money>('/money')
+
+const _notificationBase = createCrud<Notification>('/notification')
+export const notificationApi = {
+  ..._notificationBase,
+  readOne: (id: number) => request.post<any, void>(`/notification/${id}/read`),
+  readAll: () => request.post<any, void>('/notification/read-all')
+}
+export const calendarApi = createCrud<CalendarEvent>('/calendar')
+export const okrApi = createCrud<OkrObjective>('/okr')
+
+// OKR KR API
+export const okrKrApi = {
+  list: (objectiveId: number) => request.get(`/okr/kr/list/${objectiveId}`),
+  add: (data: OkrKeyResult) => request.post('/okr/kr', data),
+  update: (data: OkrKeyResult) => request.put('/okr/kr', data),
+  remove: (id: number) => request.delete(`/okr/kr/${id}`)
+}
+export const focusApi = createCrud<FocusRecord>('/focus')
+export const subscriptionApi = createCrud<Subscription>('/subscription')
 
 // Markdown 文档管理
 export interface MarkdownDoc {
@@ -308,6 +435,10 @@ export interface TodoStats { total: number; done: number; doing: number; pending
 export interface MoneyStats { income: number; expense: number; incomeByCategory: Record<string, number>; expenseByCategory: Record<string, number>; }
 export interface MediaStats { ideaCount: number; mediaCount: number; docsCount: number; boardCount: number; }
 export interface Overview { totalRecords: number; thisWeekNew: number; thisMonthNew: number; doneTodoCount: number; totalIncome: number; totalExpense: number; }
+export interface InsightItem { title: string; desc: string; tag: string }
+export interface CompareItem { label: string; last: number; cur: number; delta: string; deltaColor: string }
+export interface NextActionItem { id: number; title: string; role: string; done: boolean }
+export interface ContentBreakdown { gzh?: number; video?: number; xhs?: number; other?: number }
 export interface InsightStatsVO {
   overview: Overview;
   last7DaysTrend: TrendPoint[];
@@ -316,6 +447,18 @@ export interface InsightStatsVO {
   moneyStats: MoneyStats;
   projectTop5: ProjectRank[];
   mediaStats: MediaStats;
+  focusHoursThisWeek?: number;
+  focusHoursMomPct?: number;
+  todoDoneRate?: number;
+  todoOverdueCount?: number;
+  contentOutputThisWeek?: number;
+  contentBreakdown?: ContentBreakdown;
+  barsFocus?: number[];
+  barsTodo?: number[];
+  barsContent?: number[];
+  insights?: InsightItem[];
+  compares?: CompareItem[];
+  nextActions?: NextActionItem[];
 }
 export const statsApi = {
   dashboard: () => request.get<any, DashboardStatsVO>('/stats/dashboard'),
