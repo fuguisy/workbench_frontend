@@ -26,12 +26,13 @@ const getHabitColor = (h: HabitPanelItem, idx: number): string => {
 // ========== 顶部统计 ==========
 const loading = ref(false)
 const habits = ref<HabitPanelItem[]>([])
-const stats = ref<PanelStats>({ total: 0, done: 0, pending: 0, rate: 0, maxStreak: 0, weekRate: 0, totalCount: 0, yearCount: 0, longestStreakName: '', weekRateMom: 0 })
+// 仅保留后端 PanelStats 真实返回的字段（total/done/pending/rate/maxStreak）
+const stats = ref<PanelStats>({ total: 0, done: 0, pending: 0, rate: 0, maxStreak: 0 })
 const today = dayjs()
 const todayStr = today.format('YYYY-MM-DD')
 const weekdayCn = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][today.day()]
 
-// 本周完成率所需：近 7 天打卡矩阵（habit_id -> Set(date)）
+// 近 7 天打卡矩阵（habit_id -> Set<yyyy-MM-dd>），数据全部来自后端 monthDates 真实接口
 const weekMap = ref<Map<number, Set<string>>>(new Map())
 
 // 近 7 天日期（从今天往前 6 天 + 今天）
@@ -46,12 +47,52 @@ const weekShortLabels = computed(() => weekDates.value.map(d => ['S','M','T','W'
 const weekShortDates = computed(() => weekDates.value.map(d => `${d.month()}/${d.date()}`))
 const todayLabel = computed(() => `${weekdayCn} · ${today.month() + 1}/${today.date()}`)
 
+// 近 7 天窗口跨越的月份（通常 1 个，月初时会跨到上个月）
+const windowMonths = computed(() => {
+  const months: { year: number; month: number }[] = []
+  weekDates.value.forEach(d => {
+    const year = d.year()
+    const month = d.month() + 1
+    if (!months.some(m => m.year === year && m.month === month)) months.push({ year, month })
+  })
+  return months
+})
+
+// 逐习惯拉取近 7 天窗口内的真实打卡日期（后端 monthDates 返回 yyyy-MM-dd）
+const loadWeekMap = async () => {
+  if (!habits.value.length) {
+    weekMap.value = new Map()
+    return
+  }
+  try {
+    const map = new Map<number, Set<string>>()
+    for (const h of habits.value) {
+      const set = new Set<string>()
+      for (const m of windowMonths.value) {
+        const dates = await checkinPanelApi.monthDates(h.id as number, m.year, m.month)
+        const list = dates || []
+        list.forEach(d => set.add(d))
+      }
+      map.set(h.id as number, set)
+    }
+    weekMap.value = map
+  } catch (e: any) {
+    // 拿不到真实数据就留空，绝不编造打卡日期
+    weekMap.value = new Map()
+    message.error(`近 7 天打卡数据加载失败：${e?.message || e}`)
+  }
+}
+
 // ========== 派生 4 张卡片数据 ==========
 const todayDonePending = computed(() => {
   const done = habits.value.filter(h => h.todayDone).length
   const pending = habits.value.length - done
   return { done, pending }
 })
+// 累计打卡次数 = 各习惯真实 totalCount 之和（后端未提供全局累计字段）
+const totalCheckinCount = computed(() =>
+  habits.value.reduce((sum, h) => sum + (h.totalCount || 0), 0)
+)
 const topCards = computed(() => [
   {
     label: '今日完成',
@@ -71,19 +112,21 @@ const topCards = computed(() => [
     accent: 'var(--color-success)'
   },
   {
+    // 后端 PanelStats 未提供「本周完成率」字段，这里不做任何估算，直接展示占位
     label: '本周完成率',
-    value: `${stats.value.weekRate || 0}%`,
+    value: '—',
     extra: {
-      text: (stats.value.weekRateMom || 0) >= 0 ? `+${stats.value.weekRateMom || 0}% 环比` : `${stats.value.weekRateMom || 0}% 环比`,
-      color: (stats.value.weekRateMom || 0) >= 0 ? 'var(--color-success)' : 'var(--color-error)'
+      text: '后端暂未提供该指标',
+      color: 'var(--color-text-secondary)'
     },
     accent: 'var(--color-primary)'
   },
   {
+    // 累计打卡 = 各习惯真实 totalCount 之和
     label: '累计打卡',
-    value: stats.value.yearCount?.toLocaleString() || (stats.value.totalCount || 0).toLocaleString(),
+    value: totalCheckinCount.value.toLocaleString(),
     extra: {
-      text: '今年至今',
+      text: '全部记录',
       color: 'var(--color-text-secondary)'
     },
     accent: 'var(--color-info)'
@@ -108,27 +151,8 @@ const loadPanel = async () => {
     }
     if (longest) s.longestStreakName = (longest as HabitPanelItem).title
 
-    // 本周完成率：简单本地估算（用 todayDone / total * 7 天，真实值可由后端返回）
-    if (!s.weekRate && habits.value.length) {
-      const avg = (todayDonePending.value.done / habits.value.length) * 100
-      s.weekRate = Math.min(100, Math.round(avg + 6)) // 模拟，真实由后端提供
-    }
-    if (!s.yearCount) s.yearCount = s.totalCount
-
-    // 模拟每习惯近 7 天打卡数据（后续可扩展后端接口 habit_id -> last7Dates）
-    weekMap.value = new Map()
-    habits.value.forEach((h, i) => {
-      const s = new Set<string>()
-      const streak = h.streak || 0
-      // 近 7 天中：今天如果 done 就有；向前填 streak 天，跳过 1-2 天（模拟偶尔漏打）
-      if (h.todayDone) s.add(todayStr)
-      for (let d = 1; d <= streak; d++) {
-        const date = today.subtract(d, 'day')
-        // 每 7 天随机跳 1-2 天，使 UI 更真实
-        if ((i + d) % 5 !== 0) s.add(date.format('YYYY-MM-DD'))
-      }
-      weekMap.value.set(h.id as number, s)
-    })
+    // 近 7 天打卡格：改用后端 monthDates 真实数据（不再本地编造）
+    await loadWeekMap()
   } catch (e: any) {
     message.error(`加载失败：${e?.message || e}`)
   } finally {
@@ -254,6 +278,10 @@ const loadCalDates = async () => {
   try {
     const dates = await checkinPanelApi.monthDates(calHabit.value.id as number, calYear.value, calMonth.value)
     calDates.value = new Set(dates || [])
+  } catch (e: any) {
+    // 失败时把日历回退为空，并提示用户
+    calDates.value = new Set()
+    message.error(`日历数据加载失败：${e?.message || e}`)
   } finally {
     calLoading.value = false
   }

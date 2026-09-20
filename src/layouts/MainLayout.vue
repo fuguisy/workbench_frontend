@@ -4,9 +4,11 @@ import { useRoute } from 'vue-router'
 import AppSider from '@/components/AppSider.vue'
 import AppHeader from '@/components/AppHeader.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useAppStore } from '@/stores/app'
 
 const route = useRoute()
 const authStore = useAuthStore()
+const appStore = useAppStore()
 
 // 顶部小面包屑（设计稿的标题区：页面名 + 描述）
 const pageTitle = computed(() => {
@@ -18,8 +20,9 @@ const pageTitle = computed(() => {
 })
 
 onMounted(async () => {
-  // 全站默认强制启用深色主题
-  document.documentElement.setAttribute('data-theme', 'dark')
+  // 主题与外观统一由 appStore 管理（默认深色，可在「工作台设置」切换后长期生效）
+  appStore.applyTheme()
+  appStore.applyAppearance()
   if (authStore.token && !authStore.userInfo) {
     try { await authStore.fetchUserInfo() } catch { /* ignore */ }
   }
@@ -81,6 +84,10 @@ onMounted(async () => {
   align-items: flex-end;
   justify-content: space-between;
   gap: 24px;
+  /* 「工作台设置 - 页面最大宽度」 */
+  width: 100%;
+  max-width: var(--wb-page-max, 1680px);
+  margin: 0 auto;
 }
 .page-title {
   font-size: 26px;
@@ -102,6 +109,10 @@ onMounted(async () => {
   min-height: 0;
   overflow-y: auto;
   padding: 0 32px 32px;
+  /* 「工作台设置 - 页面最大宽度」 */
+  width: 100%;
+  max-width: var(--wb-page-max, 1680px);
+  margin: 0 auto;
 }
 .page-content::-webkit-scrollbar { width: 10px; }
 .page-content::-webkit-scrollbar-thumb {

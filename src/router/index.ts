@@ -110,7 +110,7 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '技术笔记', desc: '代码块高亮 · Java/SQL/达梦 · 按服务归档', group: 'dev', order: 7 }
       },
 
-      // —— 【自媒体】（3）——
+      // —— 【自媒体】（6）——
       {
         path: 'media-board',
         name: 'MediaBoard',
@@ -118,10 +118,10 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '自媒体看板', desc: '三平台数据总览 · 发布排期 · 作品复盘', group: 'media', order: 1 }
       },
       {
-        path: 'media',
-        name: 'Media',
-        component: () => import('@/views/media/Index.vue'),
-        meta: { title: '素材库', desc: '图文素材 · 选题状态：草稿 / 撰写 / 发布', group: 'media', order: 2 }
+        path: 'topic',
+        name: 'Topic',
+        component: () => import('@/views/topic/Index.vue'),
+        meta: { title: '选题池', desc: '热点 / 灵感 / 客户咨询 → 待评估到已发布的选题队列', group: 'media', order: 2 }
       },
       {
         path: 'docs',
@@ -130,13 +130,25 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '创作稿件库', desc: '小说大纲 / 章节 · 口播稿 · 技术干货原稿', group: 'media', order: 3 }
       },
       {
+        path: 'media',
+        name: 'Media',
+        component: () => import('@/views/media/Index.vue'),
+        meta: { title: '素材库', desc: '图文素材 · 选题状态：草稿 / 撰写 / 发布', group: 'media', order: 4 }
+      },
+      {
+        path: 'publish',
+        name: 'Publish',
+        component: () => import('@/views/publish/Index.vue'),
+        meta: { title: '发布管理', desc: '多平台发布记录 · 排期 · 阅读与线索回流', group: 'media', order: 5 }
+      },
+      {
         path: 'lead',
         name: 'Lead',
         component: () => import('@/views/lead/Index.vue'),
-        meta: { title: '线索 / 商机', desc: '商机漏斗：新线索 → 报价 → 成交 → 交付 → 复盘', group: 'media', order: 4 }
+        meta: { title: '线索 / 商机', desc: '商机漏斗：新线索 → 报价 → 成交 → 交付 → 复盘', group: 'media', order: 6 }
       },
 
-      // —— 【知识与个人】（4）——
+      // —— 【知识与个人】（5）——
       {
         path: 'markdown',
         name: 'Markdown',
@@ -144,22 +156,28 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '知识库', desc: '沉淀阅读、灵感与复盘，让知识可检索、可复用', group: 'personal', order: 1 }
       },
       {
+        path: 'idea',
+        name: 'Idea',
+        component: () => import('@/views/idea/Index.vue'),
+        meta: { title: '灵感记录', desc: '随手记录闪念，后续可转化为选题', group: 'personal', order: 2 }
+      },
+      {
         path: 'checkin',
         name: 'Checkin',
         component: () => import('@/views/checkin/Index.vue'),
-        meta: { title: '习惯打卡', desc: '本周完成率 86% · 连续打卡 47 天', group: 'personal', order: 2 }
+        meta: { title: '习惯打卡', desc: '本周完成率 86% · 连续打卡 47 天', group: 'personal', order: 3 }
       },
       {
         path: 'money',
         name: 'Money',
         component: () => import('@/views/money/Index.vue'),
-        meta: { title: '收支记账', desc: '区分主业收入 / 自媒体副业收支', group: 'personal', order: 3 }
+        meta: { title: '收支记账', desc: '区分主业收入 / 自媒体副业收支', group: 'personal', order: 4 }
       },
       {
         path: 'subscription',
         name: 'Subscription',
         component: () => import('@/views/subscription/Index.vue'),
-        meta: { title: '订阅账单', desc: '11 项订阅中 · 本月已支出 ¥468', group: 'personal', order: 4 }
+        meta: { title: '订阅账单', desc: '11 项订阅中 · 本月已支出 ¥468', group: 'personal', order: 5 }
       },
 
       // —— 【系统】（4）——

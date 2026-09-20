@@ -6,7 +6,7 @@ import {
   ClockCircleOutlined, ThunderboltOutlined, CoffeeOutlined, TrophyOutlined,
   SearchOutlined, PlayCircleOutlined, PauseCircleOutlined,
   CheckCircleOutlined, CloseCircleOutlined, LinkOutlined,
-  ReloadOutlined as ReloadIcon, FlagOutlined, HistoryOutlined
+  FlagOutlined, HistoryOutlined
 } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { focusApi, todoApi, type FocusRecord } from '@/api/modules'
@@ -28,10 +28,6 @@ const STATUS_MAP: Record<string, string> = {
   DOING: '进行中',
   DONE: '已完成',
   CANCEL: '已打断'
-}
-const statusColorMap: Record<string, string> = {
-  未开始: '#8E8E93', 进行中: '#0A84FF', 休息中: '#FF9F0A',
-  已完成: '#34C759', 已打断: '#FF375F'
 }
 
 // ============ 计时器状态 ============
@@ -441,7 +437,7 @@ const del = (r: FocusItem) => Modal.confirm({
       <div class="section-header">
         <div class="section-title"><HistoryOutlined /> 专注历史</div>
         <div class="section-actions">
-          <button class="btn-text" @click="loadData"><ReloadIcon /> 刷新</button>
+          <button class="btn-text" @click="loadData"><ReloadOutlined /> 刷新</button>
           <a-input v-model:value="searchText" placeholder="搜索任务/关联待办" allow-clear size="small" style="width:200px">
             <template #prefix><SearchOutlined /></template>
           </a-input>

@@ -12,10 +12,15 @@ const algorithm = computed(() =>
   appStore.theme === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm
 )
 
+// 主色调：优先取「工作台设置」里选定的颜色，未设置时跟随主题默认色
+const primary = computed(
+  () => appStore.primaryColor || (appStore.theme === 'dark' ? '#5E6AD2' : '#1677ff')
+)
+
 // 设计稿深色 token（与 CSS 变量对齐）
 const token = computed(() => ({
-  colorPrimary: '#5E6AD2',
-  colorInfo: '#5E6AD2',
+  colorPrimary: primary.value,
+  colorInfo: primary.value,
   colorSuccess: '#34C759',
   colorWarning: '#FF9F0A',
   colorError: '#FF453A',

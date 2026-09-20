@@ -10,7 +10,8 @@ import {
   SearchOutlined,
   ReloadOutlined,
   FilterOutlined,
-  ClockCircleOutlined
+  ClockCircleOutlined,
+  CheckCircleOutlined
 } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import {
@@ -18,7 +19,6 @@ import {
   addTodo,
   updateTodo,
   deleteTodo,
-  toggleTodoDone,
   type Todo
 } from '@/api/todo'
 
@@ -231,17 +231,6 @@ const handleDelete = (record: Todo) => {
   })
 }
 
-const handleToggle = async (record: Todo) => {
-  if (!record.id) return
-  try {
-    await toggleTodoDone(record.id!)
-    message.success(record.done === 1 ? '已标记为未完成' : '已完成')
-    await fetchData()
-  } catch {
-    // ignore
-  }
-}
-
 const fetchData = async () => {
   loading.value = true
   try {
@@ -358,7 +347,7 @@ onMounted(() => {
           </div>
         </div>
         <div class="stat-icon-wrap" style="background: rgba(52,199,89,0.12); color:#34C759">
-          <PlusOutlined />
+          <CheckCircleOutlined />
         </div>
       </div>
     </div>

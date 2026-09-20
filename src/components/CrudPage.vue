@@ -2,43 +2,7 @@
 import { ref, reactive, onMounted, computed, defineComponent, h } from 'vue'
 import { message, Modal, Tag } from 'ant-design-vue'
 import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined } from '@ant-design/icons-vue'
-
-export interface CrudConfig {
-  title: string
-  api: any
-  columns: CrudColumn[]
-  formFields: FormField[]
-  searchFields?: SearchField[]
-  extraFilter?: (record: any) => boolean
-}
-
-export interface CrudColumn {
-  title: string
-  dataIndex: string
-  width?: number | string
-  fixed?: 'left' | 'right' | boolean
-  align?: 'left' | 'center' | 'right'
-  ellipsis?: boolean
-  customRender?: (params: { text: any; record: any; index: number; column: any }) => any
-  tagColorMap?: Record<string, string>
-}
-
-export interface FormField {
-  key: string
-  label: string
-  type: 'input' | 'textarea' | 'select' | 'number' | 'date'
-  options?: { label: string; value: string }[]
-  required?: boolean
-  placeholder?: string
-  span?: number
-}
-
-export interface SearchField {
-  key: string
-  label: string
-  type: 'input' | 'select'
-  options?: { label: string; value: string }[]
-}
+import type { CrudConfig } from '@/types/crud'
 
 // 用于渲染 customRender 返回的 VNode / 字符串 / 数字
 const VNodeRenderer = defineComponent({
@@ -50,6 +14,8 @@ const VNodeRenderer = defineComponent({
 })
 
 const props = defineProps<{ config: CrudConfig }>()
+// 增删改成功后对外广播，供父页面刷新自己的统计/图表
+const emit = defineEmits<{ (e: 'changed'): void }>()
 
 const loading = ref(false)
 const dataList = ref<any[]>([])
@@ -174,7 +140,8 @@ const handleOk = async () => {
       pagination.current = 1
     }
     modalVisible.value = false
-    loadData()
+    await loadData()
+    emit('changed')
   } catch (e: any) {
     if (e?.errorFields) return
   }
@@ -190,7 +157,8 @@ const handleDelete = (record: any) => {
     onOk: async () => {
       await props.config.api.remove(record.id)
       message.success('删除成功')
-      loadData()
+      await loadData()
+      emit('changed')
     }
   })
 }

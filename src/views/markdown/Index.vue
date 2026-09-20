@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, nextTick, h } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick, h } from 'vue'
 import {
   UploadOutlined, DownloadOutlined, FileMarkdownOutlined,
   EditOutlined, DeleteOutlined, CloudDownloadOutlined,
@@ -7,15 +7,16 @@ import {
   FileTextOutlined, FileExcelOutlined, FilePdfOutlined,
   FileWordOutlined, FolderOpenOutlined, RocketOutlined,
   PlusOutlined, FolderOutlined, FolderAddOutlined,
-  FileAddOutlined, CloseOutlined, ReloadOutlined,
-  CaretRightOutlined, FileDoneOutlined, RiseOutlined,
+  FileAddOutlined, ReloadOutlined,
+  FileDoneOutlined, RiseOutlined,
   AuditOutlined, ClockCircleOutlined, SearchOutlined,
-  ScheduleOutlined, ReadOutlined
+  ScheduleOutlined, ReadOutlined, CopyOutlined,
+  BgColorsOutlined
 } from '@ant-design/icons-vue'
-import { message, Modal, Upload, Tag, Tooltip, Input, Empty } from 'ant-design-vue'
+import { message, Modal, Upload, Tag, Tooltip, Input } from 'ant-design-vue'
 import dayjs from 'dayjs'
 import { markdownApi, docCategoryApi } from '@/api/modules'
-import type { MarkdownDoc, CategoryTreeNode } from '@/api/modules'
+import type { MarkdownDoc, CategoryTreeNode, ThemeItem } from '@/api/modules'
 import { useAuthStore } from '@/stores/auth'
 
 const authStore = useAuthStore()
@@ -144,6 +145,17 @@ const mdCategoryList = [
 ]
 const mdTagList = ['Markdown', 'Word', 'PDF', 'Excel', 'TXT', '已发布', '草稿']
 
+// 分类卡片筛选：独立于左侧分类树的 selectedCategory，避免向只读 computed 赋值
+const activeCategory = ref<string | null>(null)
+const toggleCategory = (key: string) => {
+  activeCategory.value = activeCategory.value === key ? null : key
+}
+// 把后端返回的分类归一到卡片键，未知分类统一归入「日记随笔」，保证计数与筛选口径一致
+const normalizeCategory = (cat?: string) => {
+  const c = cat || '其他'
+  return mdCategoryList.some(x => x.key === c) ? c : '日记随笔'
+}
+
 const mdStats = computed(() => {
   const total = dataList.value.length
   const now = dayjs()
@@ -161,9 +173,7 @@ const mdCategoryCounts = computed(() => {
   const counts: Record<string, number> = {}
   mdCategoryList.forEach(c => { counts[c.key] = 0 })
   dataList.value.forEach(r => {
-    const cat = r.category || '其他'
-    if (counts[cat] !== undefined) counts[cat]++
-    else counts['日记随笔'] = (counts['日记随笔'] || 0) + 1
+    counts[normalizeCategory(r.category)]++
   })
   return counts
 })
@@ -171,7 +181,7 @@ const mdCategoryCounts = computed(() => {
 const filteredData = computed(() => {
   return dataList.value.filter(r => {
     if (searchTitle.value && !r.title?.toLowerCase().includes(searchTitle.value.toLowerCase())) return false
-    if (selectedCategory.value && r.category !== selectedCategory.value) return false
+    if (activeCategory.value && normalizeCategory(r.category) !== activeCategory.value) return false
     if (selectedTag.value) {
       const tag = selectedTag.value
       const cat = r.category || ''
@@ -235,9 +245,6 @@ const categoryColorMap: Record<string, string> = {
   '技术文档': '#0A84FF', '读书笔记': '#FF9F0A', '日记随笔': '#FF375F',
   'Word': '#FF3B30', 'Excel': '#34C759', 'PDF': '#FF3B30', 'TXT': 'default',
   '其他': 'default'
-}
-const statusColorMap: Record<string, string> = {
-  '草稿': 'default', '撰写中': 'processing', '已完成': 'success', '已归档': 'warning'
 }
 const categoryIcon: Record<string, any> = {
   'Skill 技能': FileMarkdownOutlined, '小说': FormOutlined, '教程': EyeOutlined,
@@ -351,16 +358,21 @@ const resolveExt = (cat?: string, path?: string) => {
   }
 }
 const downloadFile = (r: MarkdownDoc) => {
-  const url = `/markdown/download/${r.id}`
+  // 必须带 /api 前缀：nginx 只把 /api/ 反代到后端，否则会命中 SPA 静态路由
+  const url = `/api/markdown/download/${r.id}`
   fetch(url, { headers: { Authorization: authStore.token || '' } })
-    .then(res => res.blob())
+    .then(res => {
+      if (!res.ok) throw new Error(`下载失败(${res.status})`)
+      return res.blob()
+    })
     .then(blob => {
       const a = document.createElement('a')
       a.href = URL.createObjectURL(blob)
       a.download = `${r.title || 'doc'}${resolveExt(r.category, r.filePath)}`
       document.body.appendChild(a); a.click(); a.remove()
+      URL.revokeObjectURL(a.href)
     })
-    .catch(() => window.open(url, '_blank'))
+    .catch((e: any) => message.error(e?.message || '下载失败'))
 }
 const openTypora = async (r: MarkdownDoc) => {
   try { message.success((await markdownApi.openTypora(r.id as number)) || 'Typora 打开中') }
@@ -382,9 +394,86 @@ const editorVisible = ref(false)
 const editorTitle = ref('')
 const editorContent = ref('')
 const editorPreview = ref('')
-const editorSplit = ref<'edit' | 'split' | 'preview'>('split')
+const editorSplit = ref<'edit' | 'split' | 'preview' | 'theme'>('split')
 const editorId = ref<number | undefined>(undefined)
 const editorSaving = ref(false)
+
+// 排版主题
+const themeList = ref<ThemeItem[]>([])
+const selectedTheme = ref('classic')
+const themedHtml = ref('')
+const themedLoading = ref(false)
+let themeTimer: ReturnType<typeof setTimeout> | null = null
+
+const loadThemes = async () => {
+  try { themeList.value = await markdownApi.themes() || [] } catch { themeList.value = [] }
+}
+
+const renderThemed = async () => {
+  if (!editorContent.value) { themedHtml.value = ''; return }
+  themedLoading.value = true
+  try {
+    const res = await markdownApi.render(editorContent.value, selectedTheme.value)
+    themedHtml.value = res?.html || ''
+  } catch (e: any) {
+    message.error(`渲染失败：${e?.message || e}`)
+  } finally { themedLoading.value = false }
+}
+
+const copyThemedHtml = async () => {
+  if (!themedHtml.value) { message.warning('请先切换到排版模式生成预览'); return }
+  try {
+    await navigator.clipboard.writeText(themedHtml.value)
+    message.success('已复制排版 HTML 到剪贴板，可直接粘贴到公众号编辑器')
+  } catch {
+    const ta = document.createElement('textarea')
+    ta.value = themedHtml.value
+    document.body.appendChild(ta); ta.select()
+    document.execCommand('copy'); ta.remove()
+    message.success('已复制排版 HTML 到剪贴板')
+  }
+}
+
+onMounted(loadThemes)
+
+// 双栏预览 / 纯预览：与「排版」共用同一套后端渲染器，保证两处看到的样式一致
+const previewHtml = ref('')
+let previewTimer: ReturnType<typeof setTimeout> | null = null
+
+const renderPreview = async () => {
+  const src = editorContent.value
+  if (!src) { previewHtml.value = ''; return }
+  try {
+    const res = await markdownApi.render(src, selectedTheme.value)
+    previewHtml.value = res?.html || ''
+  } catch {
+    // 后端不可用时退回本地轻量渲染，保证预览仍可用
+    previewHtml.value = ''
+  }
+}
+
+// 组件卸载时清理挂起的防抖定时器，避免已销毁仍触发渲染请求
+onUnmounted(() => {
+  if (themeTimer) { clearTimeout(themeTimer); themeTimer = null }
+  if (previewTimer) { clearTimeout(previewTimer); previewTimer = null }
+})
+
+watch([() => editorContent.value, selectedTheme], () => {
+  if (editorSplit.value !== 'split' && editorSplit.value !== 'preview') return
+  if (previewTimer) clearTimeout(previewTimer)
+  previewTimer = setTimeout(() => renderPreview(), 300)
+})
+
+watch([selectedTheme, () => editorContent.value], () => {
+  if (editorSplit.value !== 'theme') return
+  if (themeTimer) clearTimeout(themeTimer)
+  themeTimer = setTimeout(() => renderThemed(), 300)
+})
+
+watch(() => editorSplit.value, (mode) => {
+  if (mode === 'theme') renderThemed()
+  else if (mode === 'split' || mode === 'preview') renderPreview()
+})
 
 const openEditor = (r: MarkdownDoc) => {
   editorId.value = r.id
@@ -392,6 +481,7 @@ const openEditor = (r: MarkdownDoc) => {
   editorContent.value = r.content || ''
   editorPreview.value = renderMd(r.content || '')
   editorVisible.value = true
+  renderPreview()
 }
 watch(editorContent, val => { editorPreview.value = renderMd(val) })
 
@@ -557,9 +647,9 @@ onMounted(loadTree)
             v-for="cat in mdCategoryList"
             :key="cat.key"
             class="category-card"
-            :class="{ active: selectedCategory === cat.key }"
+            :class="{ active: activeCategory === cat.key }"
             :style="{ '--cat-color': cat.color, '--cat-bg': cat.bg }"
-            @click="selectedCategory = selectedCategory === cat.key ? null : (selectedCategory = cat.key as any); selectedKeys = []"
+            @click="toggleCategory(cat.key)"
           >
             <div class="cat-badge">{{ mdCategoryCounts[cat.key] || 0 }}</div>
             <div class="cat-icon"><component :is="cat.icon" /></div>
@@ -570,7 +660,7 @@ onMounted(loadTree)
         <div class="section-title">
           <span class="title-text">
             <FolderOutlined style="color:#5E6AD2;margin-right:6px" />
-            {{ selectedCategory || '全部文档' }}
+            {{ activeCategory || '全部文档' }}
             <span class="sub-count">({{ sortedList.length }} 篇)</span>
           </span>
         </div>
@@ -698,22 +788,58 @@ onMounted(loadTree)
       class="md-editor-modal"
     >
       <div class="md-editor-header">
-        <a-radio-group v-model:value="editorSplit" button-style="solid" size="small">
-          <a-radio-button value="edit">编辑</a-radio-button>
-          <a-radio-button value="split">双栏</a-radio-button>
-          <a-radio-button value="preview">预览</a-radio-button>
-        </a-radio-group>
+        <a-space>
+          <a-radio-group v-model:value="editorSplit" button-style="solid" size="small">
+            <a-radio-button value="edit">编辑</a-radio-button>
+            <a-radio-button value="split">双栏</a-radio-button>
+            <a-radio-button value="preview">预览</a-radio-button>
+            <a-radio-button value="theme">排版</a-radio-button>
+          </a-radio-group>
+          <a-select
+            v-if="editorSplit === 'split' || editorSplit === 'preview' || editorSplit === 'theme'"
+            v-model:value="selectedTheme"
+            size="small"
+            style="min-width:120px"
+          >
+            <a-select-option v-for="t in themeList" :key="t.key" :value="t.key">
+              <span :style="{ display:'inline-block', width:10, height:10, borderRadius:'50%', background:t.color, marginRight:6, verticalAlign:'middle' }" />
+              {{ t.name }}
+            </a-select-option>
+          </a-select>
+          <Tooltip v-if="editorSplit === 'theme'" title="复制排版 HTML 到剪贴板，可直接粘贴到公众号编辑器">
+            <a-button size="small" @click="copyThemedHtml"><CopyOutlined /> 复制 HTML</a-button>
+          </Tooltip>
+        </a-space>
         <a-space>
           <a-button size="small" @click="downloadMd"><DownloadOutlined /> 下载 .md</a-button>
           <a-button type="primary" size="small" :loading="editorSaving" @click="editorSave"><SaveOutlined /> 保存</a-button>
         </a-space>
       </div>
       <div class="md-editor-body" :class="'mode-' + editorSplit">
-        <div v-if="editorSplit !== 'preview'" class="md-edit-pane">
+        <div v-if="editorSplit !== 'preview' && editorSplit !== 'theme'" class="md-edit-pane">
           <textarea v-model="editorContent" spellcheck="false" class="md-textarea"></textarea>
         </div>
-        <div v-if="editorSplit !== 'edit'" class="md-preview-pane">
-          <div class="md-preview" v-html="editorPreview"></div>
+        <div v-if="editorSplit === 'split' || editorSplit === 'preview'" class="md-preview-pane">
+          <div class="md-preview" :class="{ 'md-preview-themed': !!previewHtml }" v-html="previewHtml || editorPreview"></div>
+        </div>
+        <div v-if="editorSplit === 'theme'" class="md-theme-pane">
+          <div class="md-theme-toolbar">
+            <BgColorsOutlined style="color:#5E6AD2" />
+            <span class="md-theme-hint">排版预览 · 所有样式均已内联，复制 HTML 即可粘贴到公众号编辑器</span>
+            <a-spin v-if="themedLoading" size="small" />
+          </div>
+          <div class="md-theme-content">
+            <iframe
+              v-if="themedHtml"
+              class="md-theme-iframe"
+              :srcdoc="`<!DOCTYPE html><html><head><meta charset='utf-8'><style>body{margin:0;padding:24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:15px;line-height:1.75;color:#333;word-wrap:break-word}img{max-width:100%}</style></head><body>${themedHtml}</body></html>`"
+              sandbox="allow-same-origin"
+            />
+            <div v-else class="md-theme-empty">
+              <div style="font-size:32px;margin-bottom:8px">🎨</div>
+              <div>选择主题后自动生成公众号排版预览</div>
+            </div>
+          </div>
         </div>
       </div>
     </a-modal>
@@ -1067,6 +1193,8 @@ onMounted(loadTree)
 .md-editor-body.mode-split .md-edit-pane,
 .md-editor-body.mode-split .md-preview-pane { width: 50%; border-right: 1px solid var(--color-border); }
 .md-editor-body.mode-split .md-preview-pane { border-right: none; }
+.md-editor-body.mode-theme .md-edit-pane,
+.md-editor-body.mode-theme .md-preview-pane { display: none; }
 .md-edit-pane { display: flex; min-height: 0; }
 .md-textarea {
   flex: 1; width: 100%; padding: 16px; border: none; outline: none; resize: none;
@@ -1087,7 +1215,35 @@ onMounted(loadTree)
 .md-preview pre.md-fence code { background: none; color: inherit; }
 .md-preview hr { border: none; border-top: 1px solid var(--color-border); margin: 16px 0; }
 .md-preview a { color: var(--color-primary); }
+
+/* 预览已切换到后端主题渲染器时，容器改为公众号白底观感（与「排版」一致） */
+.md-preview.md-preview-themed {
+  background: #fff;
+  color: #333;
+  padding: 24px;
+  line-height: 1.75;
+}
+.md-preview.md-preview-themed h1,
+.md-preview.md-preview-themed h2 { border-bottom: none; }
 .md-preview img { max-width: 100%; border-radius: 4px; margin: 6px 0; }
+
+/* ---- 排版主题预览 ---- */
+.md-theme-pane { width: 100%; display: flex; flex-direction: column; min-height: 0; }
+.md-theme-toolbar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 18px; border-bottom: 1px solid var(--color-border);
+  font-size: 12px; color: var(--color-text-secondary);
+  background: var(--color-bg-card);
+}
+.md-theme-hint { flex: 1; }
+.md-theme-content { flex: 1; overflow: auto; display: flex; min-height: 0; }
+.md-theme-iframe {
+  width: 100%; border: none; background: #fff;
+}
+.md-theme-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  flex: 1; color: var(--color-text-secondary); font-size: 14px;
+}
 
 :deep(.ant-modal),
 :deep(.ant-modal-title),

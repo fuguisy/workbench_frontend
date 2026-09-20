@@ -20,7 +20,7 @@ import {
   DashboardOutlined
 } from '@ant-design/icons-vue'
 import { useAuthStore } from '@/stores/auth'
-import { statsApi, todoApi, checkinPanelApi, moneyApi, mediaBoardApi, type DashboardStatsVO } from '@/api/modules'
+import { statsApi, todoApi, checkinPanelApi, moneyApi, mediaBoardApi, type DashboardStatsVO, type PanelData, type MediaBoard } from '@/api/modules'
 import type { Todo } from '@/api/todo'
 
 const router = useRouter()
@@ -38,12 +38,17 @@ const nickname = computed(() => authStore.userInfo?.nickname || '晓贵')
 const loading = ref(false)
 const dashboard = ref<DashboardStatsVO | null>(null)
 const todoList = ref<Todo[]>([])
+// 打卡 / 记账 / 自媒体看板的真实数据源，用于首页图表与完成率
+const checkinPanel = ref<PanelData | null>(null)
+const moneyList = ref<any[]>([])
+const mediaList = ref<MediaBoard[]>([])
 const nowTick = ref(Date.now())
 let timer: number | undefined
 
+const WEEK_LABELS = ['日', '一', '二', '三', '四', '五', '六']
+
 onMounted(() => {
   timer = window.setInterval(() => { nowTick.value = Date.now() }, 60 * 1000)
-  const savedRole = localStorage.getItem('homeRole')
   if (authStore.token && !authStore.userInfo) {
     try { authStore.fetchUserInfo() } catch { /* ignore */ }
   }
@@ -59,12 +64,18 @@ onBeforeUnmount(() => {
 const loadAllData = async () => {
   loading.value = true
   try {
-    const [dashRes, todoRes] = await Promise.all([
+    const [dashRes, todoRes, panelRes, moneyRes, mediaRes] = await Promise.all([
       statsApi.dashboard().catch(() => null),
-      todoApi.list().catch(() => [])
+      todoApi.list().catch(() => []),
+      checkinPanelApi.panel().catch(() => null),
+      moneyApi.list().catch(() => []),
+      mediaBoardApi.list().catch(() => [])
     ])
     if (dashRes) dashboard.value = dashRes as any
     todoList.value = Array.isArray(todoRes) ? todoRes : (todoRes as any)?.records ?? []
+    checkinPanel.value = panelRes as any
+    moneyList.value = Array.isArray(moneyRes) ? moneyRes : []
+    mediaList.value = Array.isArray(mediaRes) ? mediaRes : []
   } catch {
     // ignore
   } finally {
@@ -126,29 +137,33 @@ const todayTodos = computed(() => {
 const overviewStats = computed(() => {
   const d = dashboard.value
   const todayCount = todayTodos.value.length
-  const doingCount = todoList.value.filter(t => t.done !== 1 && (t.pomoCount ?? 0) > 0).length || (d?.todoTodayCount ? Math.floor(d.todoTodayCount * 0.3) : 0)
-  const weekDone = todoList.value.filter(t => {
-    if (t.done !== 1) return false
-    if (!t.updateTime) return Math.random() > 0.6
-    return dayjs(t.updateTime).isAfter(dayjs().startOf('week'))
-  }).length
-  const weekTotal = Math.max(weekDone + todayCount + doingCount, 1)
-  const weekRate = Math.round((weekDone / weekTotal) * 100)
+  const doingCount = todoList.value.filter(t => t.done !== 1 && (t.pomoCount ?? 0) > 0).length
+  // 仅统计真实标记为完成、且本周内更新过的任务，不再用随机数兜底
+  const weekDone = todoList.value.filter(t =>
+    t.done === 1 && t.updateTime && dayjs(t.updateTime).isAfter(dayjs().startOf('week'))
+  ).length
+  const weekTotal = weekDone + todayCount + doingCount
+  const weekRate = weekTotal > 0 ? Math.round((weekDone / weekTotal) * 100) : 0
   const monthOutput = (d?.mediaBoardCount ?? 0) + (d?.docsCount ?? 0) * 2 + (d?.techNoteCount ?? 0) * 3
   return {
-    today: { label: '今日任务', value: todayCount || (d?.todoTodayCount ?? 0), suffix: '项', icon: CalendarOutlined, color: '#5E6AD2', soft: 'rgba(94,106,210,0.12)' },
-    doing: { label: '进行中', value: doingCount || Math.max(1, Math.floor((d?.todoTodayCount ?? 2) * 0.4)), suffix: '个', icon: PlayCircleOutlined, color: '#FF9F0A', soft: 'rgba(255,159,10,0.12)' },
-    weekRate: { label: '本周完成率', value: weekRate || 68, suffix: '%', icon: CheckCircleOutlined, color: '#34C759', soft: 'rgba(52,199,89,0.12)' },
-    monthOutput: { label: '本月产出', value: monthOutput || 42, suffix: '件', icon: DashboardOutlined, color: '#0A84FF', soft: 'rgba(10,132,255,0.12)' }
+    today: { label: '今日任务', value: todayCount, suffix: '项', icon: CalendarOutlined, color: '#5E6AD2', soft: 'rgba(94,106,210,0.12)' },
+    doing: { label: '进行中', value: doingCount, suffix: '个', icon: PlayCircleOutlined, color: '#FF9F0A', soft: 'rgba(255,159,10,0.12)' },
+    weekRate: { label: '本周完成率', value: weekRate, suffix: '%', icon: CheckCircleOutlined, color: '#34C759', soft: 'rgba(52,199,89,0.12)' },
+    monthOutput: { label: '本月产出', value: monthOutput, suffix: '件', icon: DashboardOutlined, color: '#0A84FF', soft: 'rgba(10,132,255,0.12)' }
   }
 })
 
+// 打卡完成情况：直接取打卡面板的真实统计
 const checkinRingData = computed(() => {
-  const d = dashboard.value
-  const total = d?.checkinActiveCount ?? 6
-  const done = Math.max(1, Math.floor(total * 0.65))
-  const rate = Math.round((done / total) * 100)
-  return { total, done, pending: total - done, rate }
+  const s = checkinPanel.value?.stats
+  const total = Number(s?.total ?? 0)
+  const done = Number(s?.done ?? 0)
+  return {
+    total,
+    done,
+    pending: Math.max(total - done, 0),
+    rate: total > 0 ? Math.round((done / total) * 100) : 0
+  }
 })
 
 const checkinRingPath = (r: number, c: number, rate: number) => {
@@ -157,44 +172,70 @@ const checkinRingPath = (r: number, c: number, rate: number) => {
   return { strokeDasharray: `${dash} ${circ - dash}` }
 }
 
+// 近 7 天涨粉：按自媒体看板记录（date + platform + follows）真实汇总，不再用随机数
 const fansTrendData = computed(() => {
+  const map = new Map<string, { dy: number; bili: number; xhs: number; other: number }>()
+  for (const r of mediaList.value) {
+    const day = String(r.date || r.createTime || '').substring(0, 10)
+    if (!day) continue
+    const cur = map.get(day) || { dy: 0, bili: 0, xhs: 0, other: 0 }
+    const follows = Number(r.follows || 0)
+    const p = String(r.platform || '').toLowerCase()
+    if (p.includes('抖音') || p.includes('douyin')) cur.dy += follows
+    else if (p.includes('b站') || p.includes('bili') || p.includes('哔哩')) cur.bili += follows
+    else if (p.includes('小红书') || p.includes('xhs') || p.includes('red')) cur.xhs += follows
+    else cur.other += follows
+    map.set(day, cur)
+  }
+
   const days: { date: string; label: string; value: number; dy: number; bili: number; xhs: number }[] = []
   for (let i = 6; i >= 0; i--) {
     const d = dayjs().subtract(i, 'day')
-    const base = 40 + (6 - i) * 8
+    const v = map.get(d.format('YYYY-MM-DD')) || { dy: 0, bili: 0, xhs: 0, other: 0 }
     days.push({
       date: d.format('MM-DD'),
-      label: ['日', '一', '二', '三', '四', '五', '六'][d.day()],
-      value: base + Math.floor(Math.random() * 30),
-      dy: Math.floor(base * 0.4 + Math.random() * 15),
-      bili: Math.floor(base * 0.35 + Math.random() * 10),
-      xhs: Math.floor(base * 0.25 + Math.random() * 10)
+      label: WEEK_LABELS[d.day()],
+      value: v.dy + v.bili + v.xhs + v.other,
+      dy: v.dy,
+      bili: v.bili,
+      xhs: v.xhs
     })
   }
   const max = Math.max(...days.map(d => d.value), 1)
   const total = days.reduce((s, d) => s + d.value, 0)
-  return { days, max, total, avg: Math.round(total / 7) }
+  return { days, max, total, avg: Math.round(total / 7), hasData: total > 0 }
 })
 
+// 近 7 天收支：按真实记账记录（date + type + amount）汇总，不再用硬编码数组
 const money7DaysData = computed(() => {
+  const map = new Map<string, { income: number; expense: number }>()
+  for (const r of moneyList.value) {
+    const day = String(r.date || '').substring(0, 10)
+    if (!day) continue
+    const cur = map.get(day) || { income: 0, expense: 0 }
+    const amt = Number(r.amount || 0)
+    if (r.type === 'income') cur.income += amt
+    else if (r.type === 'expense') cur.expense += amt
+    map.set(day, cur)
+  }
+
   let income = 0
   let expense = 0
   const days: { date: string; label: string; income: number; expense: number; balance: number }[] = []
   for (let i = 6; i >= 0; i--) {
     const d = dayjs().subtract(i, 'day')
-    const inc = [120, 0, 800, 0, 350, 0, 0][6 - i]
-    const exp = [58, 120, 35, 280, 95, 150, 68][6 - i]
-    income += inc
-    expense += exp
+    const v = map.get(d.format('YYYY-MM-DD')) || { income: 0, expense: 0 }
+    income += v.income
+    expense += v.expense
     days.push({
       date: d.format('MM-DD'),
-      label: ['日', '一', '二', '三', '四', '五', '六'][d.day()],
-      income: inc,
-      expense: exp,
-      balance: inc - exp
+      label: WEEK_LABELS[d.day()],
+      income: v.income,
+      expense: v.expense,
+      balance: v.income - v.expense
     })
   }
-  return { days, income, expense, balance: income - expense }
+  return { days, income, expense, balance: income - expense, hasData: income > 0 || expense > 0 }
 })
 
 const goPath = (path: string) => router.push(path)
@@ -247,7 +288,7 @@ const goPath = (path: string) => router.push(path)
         </div>
         <div class="ov-trend" :class="key === 'weekRate' || key === 'monthOutput' ? 'up' : 'flat'">
           <component :is="key === 'weekRate' || key === 'monthOutput' ? ArrowUpOutlined : CheckCircleOutlined" />
-          <span>{{ key === 'today' ? '待处理' : key === 'doing' ? '进行中' : key === 'weekRate' ? '+5.2%' : '+12' }}</span>
+          <span>{{ key === 'today' ? '待处理' : key === 'doing' ? '进行中' : key === 'weekRate' ? '本周' : '本月' }}</span>
         </div>
       </div>
     </div>
@@ -378,7 +419,10 @@ const goPath = (path: string) => router.push(path)
             <span class="view-link" @click="goPath('/media-board')">详情</span>
           </div>
           <div class="fans-chart">
-            <svg viewBox="0 0 320 140" class="fans-svg" preserveAspectRatio="none">
+            <div v-if="!fansTrendData.hasData" class="chart-empty">
+              暂无近 7 天涨粉记录，去<em @click="goPath('/media-board')">自媒体看板</em>填写
+            </div>
+            <svg v-else viewBox="0 0 320 140" class="fans-svg" preserveAspectRatio="none">
               <defs>
                 <linearGradient id="fans-area" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stop-color="#5E6AD2" stop-opacity="0.30" />
@@ -449,7 +493,7 @@ const goPath = (path: string) => router.push(path)
               <div class="sum-val">¥{{ money7DaysData.expense.toLocaleString() }}</div>
             </div>
           </div>
-          <div class="money-bars">
+          <div class="money-bars" v-if="money7DaysData.hasData">
             <div v-for="d in money7DaysData.days" :key="d.date" class="bar-col">
               <div class="bars-wrap">
                 <div v-if="d.income > 0" class="bar income-bar" :style="{ height: `${Math.max(4, (d.income / Math.max(money7DaysData.income / 7 * 2, 1)) * 50)}px` }">
@@ -462,6 +506,9 @@ const goPath = (path: string) => router.push(path)
               <div class="bar-label">{{ d.label }}</div>
             </div>
           </div>
+          <div v-else class="chart-empty">
+            暂无近 7 天记账记录，去<em @click="goPath('/money')">收支记账</em>添加
+          </div>
           <div class="money-legend">
             <span class="ml-item in"><span class="ml-dot" />收入</span>
             <span class="ml-item ex"><span class="ml-dot" />支出</span>
@@ -473,6 +520,24 @@ const goPath = (path: string) => router.push(path)
 </template>
 
 <style scoped>
+/* 图表无数据时的占位提示 */
+.chart-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  padding: 16px;
+  font-size: 12px;
+  color: var(--color-text-tertiary, #71717A);
+  text-align: center;
+}
+.chart-empty em {
+  font-style: normal;
+  color: var(--color-primary, #5E6AD2);
+  cursor: pointer;
+  margin: 0 2px;
+}
+
 .home-page {
   display: flex;
   flex-direction: column;

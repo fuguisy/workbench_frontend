@@ -261,7 +261,7 @@ const onDataChanged = () => { loadStats() }
     </div>
 
     <!-- CRUD 表格 -->
-    <CrudPage ref="crudRef" :config="config" />
+    <CrudPage ref="crudRef" :config="config" @changed="onDataChanged" />
 
     <!-- 预算设置弹窗 -->
     <a-modal

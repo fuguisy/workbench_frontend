@@ -12,7 +12,6 @@ import {
   DollarOutlined,
   SettingOutlined,
   SearchOutlined,
-  FilterOutlined,
   ReloadOutlined,
   CheckOutlined,
   ArrowRightOutlined,
@@ -24,7 +23,9 @@ import {
 import dayjs from 'dayjs'
 import { notificationApi, type Notification as NotifEntity } from '@/api/modules'
 import { useAppStore } from '@/stores/app'
+import { useRouter } from 'vue-router'
 
+const router = useRouter()
 const appStore = useAppStore()
 
 type NotifType = 'TASK' | 'BUG' | 'DOC' | 'CHECKIN' | 'MONEY' | 'SYSTEM' | 'HOT'
@@ -146,7 +147,8 @@ const markRead = async (n: Notification) => {
     n.read = true
     message.success('已标记为已读')
   } catch {
-    n.read = true
+    // 失败时不改动本地状态，避免界面与数据库不一致
+    message.error('标记已读失败，请稍后重试')
   }
 }
 
@@ -161,16 +163,26 @@ const markAllRead = async () => {
     notifications.value.forEach(n => (n.read = true))
     message.success(`已标记 ${count} 条通知为已读`)
   } catch {
-    notifications.value.forEach(n => (n.read = true))
-    message.success(`已标记 ${count} 条通知为已读`)
+    message.error('标记失败，请稍后重试')
   }
 }
 
-const getLevel = (n: Notification) => {
-  if (n.type === 'BUG') return 'error'
-  if (n.type === 'TASK' && n.title.includes('P0')) return 'warning'
-  if (n.type === 'SYSTEM' && n.title.includes('登录')) return 'warning'
-  return 'info'
+// 类型元信息兜底：后端若返回未知类型，退回 SYSTEM，避免模板取值抛错
+const metaOf = (type: string) => TYPE_META[type as NotifType] || TYPE_META.SYSTEM
+
+// 各类型通知的跳转目标
+const TYPE_ROUTE: Record<string, string> = {
+  TASK: '/todo', BUG: '/bugs', DOC: '/markdown', CHECKIN: '/checkin',
+  MONEY: '/money', HOT: '/topic', SYSTEM: '/settings'
+}
+const gotoDetail = (n: Notification) => {
+  markRead(n)
+  const path = n.link || TYPE_ROUTE[n.type]
+  if (path) {
+    router.push(path)
+  } else {
+    message.info('该通知暂无对应详情页')
+  }
 }
 
 onMounted(() => {
@@ -267,13 +279,13 @@ onMounted(() => {
             <div class="item-left">
               <span
                 class="color-dot"
-                :style="{ background: TYPE_META[n.type].color, boxShadow: `0 0 0 4px ${TYPE_META[n.type].bg}` }"
+                :style="{ background: metaOf(n.type).color, boxShadow: `0 0 0 4px ${metaOf(n.type).bg}` }"
               ></span>
               <div
                 class="type-icon"
-                :style="{ background: TYPE_META[n.type].bg, color: TYPE_META[n.type].color }"
+                :style="{ background: metaOf(n.type).bg, color: metaOf(n.type).color }"
               >
-                <component :is="TYPE_META[n.type].icon" />
+                <component :is="metaOf(n.type).icon" />
               </div>
             </div>
 
@@ -285,14 +297,14 @@ onMounted(() => {
                   <span
                     v-if="!n.read"
                     class="unread-dot"
-                    :style="{ background: TYPE_META[n.type].color }"
+                    :style="{ background: metaOf(n.type).color }"
                   ></span>
                 </span>
                 <span
                   class="type-tag"
-                  :style="{ background: TYPE_META[n.type].bg, color: TYPE_META[n.type].color }"
+                  :style="{ background: metaOf(n.type).bg, color: metaOf(n.type).color }"
                 >
-                  {{ TYPE_META[n.type].label }}
+                  {{ metaOf(n.type).label }}
                 </span>
               </div>
               <div class="item-content">{{ n.content }}</div>
@@ -308,7 +320,7 @@ onMounted(() => {
 
             <!-- 右侧：操作 -->
             <div class="item-right">
-              <a-button size="small" type="text" class="goto-btn">
+              <a-button size="small" type="text" class="goto-btn" @click.stop="gotoDetail(n)">
                 查看详情 <ArrowRightOutlined />
               </a-button>
             </div>

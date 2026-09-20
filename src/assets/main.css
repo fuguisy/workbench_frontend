@@ -32,30 +32,9 @@ ol {
   list-style: none;
 }
 
-/* ===== CSS 变量：亮色主题（保留备用） ===== */
-:root {
-  --color-primary: #1677ff;
-  --color-success: #52c41a;
-  --color-warning: #faad14;
-  --color-error: #ff4d4f;
-
-  --color-text: rgba(0, 0, 0, 0.88);
-  --color-text-secondary: rgba(0, 0, 0, 0.65);
-  --color-text-tertiary: rgba(0, 0, 0, 0.45);
-
-  --color-bg: #f5f7fa;
-  --color-bg-card: #ffffff;
-  --color-bg-elevated: #ffffff;
-  --color-border: #f0f0f0;
-
-  --sider-bg: #001529;
-  --sider-text: rgba(255, 255, 255, 0.85);
-  --header-bg: #ffffff;
-
-  --shadow-card: 0 1px 4px rgba(0, 21, 41, 0.08);
-}
-
-/* ===== CSS 变量：设计稿深色主题（默认启用） ===== */
+/* ===== CSS 变量：设计稿深色主题（默认） =====
+   默认值挂在 :root 上（未指定 data-theme 时即深色），
+   亮色主题由下方 html[data-theme='light'] 覆盖，两套主题共用同一组变量名。 ===== */
 :root,
 html[data-theme='dark'] {
   --color-primary: #5E6AD2;
@@ -114,9 +93,59 @@ html[data-theme='dark'] {
   --spacing-xl: 24px;
   --spacing-2xl: 32px;
   --spacing-3xl: 48px;
+
+  /* 「工作台设置 - 基础外观」写入的变量 */
+  --wb-page-max: 1680px;
+  --wb-modal-width: 520px;
 }
 
-/* ===== 全站默认启用深色：强制 html data-theme=dark ===== */
+/* ===== CSS 变量：亮色主题（html data-theme=light 时生效） ===== */
+html[data-theme='light'] {
+  --color-primary: #1677ff;
+  --color-primary-hover: #4096ff;
+  --color-primary-soft: rgba(22, 119, 255, 0.12);
+  --color-success: #52c41a;
+  --color-success-soft: rgba(82, 196, 26, 0.12);
+  --color-warning: #faad14;
+  --color-warning-soft: rgba(250, 173, 20, 0.12);
+  --color-error: #ff4d4f;
+  --color-error-soft: rgba(255, 77, 79, 0.12);
+  --color-info: #1677ff;
+  --color-info-soft: rgba(22, 119, 255, 0.12);
+
+  --color-text: rgba(0, 0, 0, 0.88);
+  --color-text-secondary: rgba(0, 0, 0, 0.65);
+  --color-text-tertiary: rgba(0, 0, 0, 0.45);
+  --color-text-disabled: rgba(0, 0, 0, 0.25);
+
+  --color-bg: #f5f7fa;
+  --color-bg-card: #ffffff;
+  --color-bg-card-2: #f0f5ff;
+  --color-bg-elevated: #ffffff;
+  --color-bg-hover: #f5f5f5;
+  --color-border: #ebedf0;
+  --color-border-strong: #d9d9d9;
+
+  --sider-bg: #001529;
+  --sider-text: rgba(255, 255, 255, 0.85);
+  --sider-text-secondary: rgba(255, 255, 255, 0.65);
+  --sider-item-bg-hover: rgba(255, 255, 255, 0.08);
+  --sider-item-bg-active: #1677ff;
+  --sider-item-text-active: #ffffff;
+  --sider-group-label: rgba(255, 255, 255, 0.45);
+
+  --header-bg: #ffffff;
+  --header-border: #ebedf0;
+  --header-search-bg: #f5f7fa;
+  --header-search-placeholder: rgba(0, 0, 0, 0.35);
+  --header-btn-bg: #f5f7fa;
+  --header-btn-bg-hover: #e6f4ff;
+
+  --shadow-card: 0 1px 4px rgba(0, 21, 41, 0.08);
+  --shadow-card-hover: 0 4px 16px rgba(0, 21, 41, 0.12);
+}
+
+/* ===== 主题由 stores/app.ts 的 applyTheme() 写入 html[data-theme] ===== */
 html {
   background: var(--color-bg);
 }
@@ -129,6 +158,12 @@ html, body, #app {
 #app {
   min-height: 100vh;
   display: block;
+}
+
+/* ===== 弹窗宽度：设置页「弹窗宽度」开关写入 html[data-modal-wide] ===== */
+html[data-modal-wide='true'] .ant-modal {
+  width: var(--wb-modal-width, 960px) !important;
+  max-width: calc(100vw - 32px);
 }
 
 /* ===== 滚动条美化 ===== */

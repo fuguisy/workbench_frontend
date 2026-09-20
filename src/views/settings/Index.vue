@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import {
+  UserOutlined,
+  PlusOutlined,
+  KeyOutlined,
   BgColorsOutlined,
   CloudUploadOutlined,
   CloudDownloadOutlined,
@@ -22,6 +25,8 @@ import * as apis from '@/api/modules'
 import * as feishuApi from '@/api/feishu'
 import type { FieldSchema } from '@/api/feishu'
 import { useAppStore } from '@/stores/app'
+import { useAuthStore } from '@/stores/auth'
+import { userApi, type SysUserVO } from '@/api/user'
 export type { FieldSchema }
 
 const appStore = useAppStore()
@@ -29,11 +34,12 @@ const appStore = useAppStore()
 const activeTab = ref('appearance')
 
 // ============= 1. 基础外观（与 appStore 打通，立即生效） =============
+// 全部读写 appStore：主题 / 主色调 / 页面最大宽度 / 弹窗宽度 都会持久化并立即生效
 const appearanceForm = reactive({
   theme: appStore.theme,
-  primaryColor: localStorage.getItem('wb-primary') || '#1677ff',
-  layoutWidth: localStorage.getItem('wb-width') || '1680',
-  modalWide: localStorage.getItem('wb-modal-wide') === 'true'
+  primaryColor: appStore.primaryColor || (appStore.theme === 'dark' ? '#5E6AD2' : '#1677ff'),
+  layoutWidth: appStore.pageMaxWidth,
+  modalWide: appStore.modalWide
 })
 
 const themeOptions = [
@@ -48,14 +54,15 @@ const widthOptions = [
   { label: '1920px (超宽)', value: '1920' }
 ]
 
+const primaryOptions = ['#5E6AD2', '#1677ff', '#722ed1', '#13c2c2', '#52c41a', '#fa8c16', '#eb2f96']
+
 const saveAppearance = () => {
-  // 主题通过 appStore 立即生效（响应式 + watch 持久化）
+  // 主题：响应式 + watch 持久化 + 立即切换 html[data-theme]
   appStore.theme = appearanceForm.theme as 'dark' | 'light'
-  localStorage.setItem('wb-primary', appearanceForm.primaryColor)
-  localStorage.setItem('wb-width', appearanceForm.layoutWidth)
-  localStorage.setItem('wb-modal-wide', String(appearanceForm.modalWide))
-  // 主色调写入 CSS 变量
-  document.documentElement.style.setProperty('--color-primary', appearanceForm.primaryColor)
+  // 主色调 / 宽度 / 弹窗：appStore 内 watch 会写入 localStorage 与 CSS 变量
+  appStore.primaryColor = appearanceForm.primaryColor
+  appStore.pageMaxWidth = appearanceForm.layoutWidth
+  appStore.modalWide = appearanceForm.modalWide
   message.success('外观设置已保存并立即生效')
 }
 
@@ -79,7 +86,6 @@ const savePaths = () => {
 
 // ============= 3. 数据导入/导出 =============
 const exporting = ref(false)
-const fileInputRef = ref<HTMLInputElement | null>(null)
 
 const downloadJSON = (filename: string, data: any) => {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
@@ -141,33 +147,6 @@ const exportMarkdown = async () => {
   message.info('📝 Markdown可读备份开发中，建议先使用JSON备份')
 }
 
-const triggerImport = () => fileInputRef.value?.click()
-
-const onImportFile = (e: Event) => {
-  const input = (e.target as HTMLInputElement)?.files?.[0]
-  if (!input) return
-  const reader = new FileReader()
-  reader.onload = () => {
-    try {
-      const parsed = JSON.parse(reader.result as string)
-      const modCount = Object.keys(parsed.modules || {}).length
-      Modal.confirm({
-        title: '确认导入备份？',
-        content: `检测到备份文件：${input.name}\n共包含 ${modCount} 个模块数据。\n导入将按ID覆盖/追加到当前数据库，是否继续？`,
-        okText: '确认导入',
-        okType: 'primary',
-        cancelText: '取消',
-        onOk: () => {
-          message.success('✅ 备份文件解析成功！(后端批量导入接口开发中，当前仅作预览）')
-        }
-      })
-    } catch (err) {
-      message.error('❌ 备份文件格式错误，请使用本工作台导出的JSON文件')
-    }
-  }
-  reader.readAsText(input)
-}
-
 // ============= 4. 菜单与显示 =============
 const menuConfig = reactive({
   showDev: localStorage.getItem('wb-menu-dev') !== 'false',
@@ -205,7 +184,7 @@ const runClean = () => {
     okType: 'danger',
     okText: '确认清理',
     cancelText: '取消',
-    onOk: () => message.success('🧹 清理任务已提交（开发中/模拟执行成功）')
+    onOk: () => message.warning('该功能尚未实现，未执行任何清理操作。已删除记录由数据库的 deleted 标记保留。')
   })
 }
 
@@ -769,6 +748,165 @@ const syncAllData = async () => {
   message.success(`同步完成（${successCount}模块 / ${totalRecords}条）`)
   feishuLoading.value = false
 }
+
+// ============= 8. 用户管理（仅管理员可见） =============
+// 自助注册已下线：新增账号统一在这里完成，/sys/user 全部接口要求 admin 角色
+const authStore = useAuthStore()
+const isAdmin = computed(() => authStore.userInfo?.role === 'admin')
+
+const userLoading = ref(false)
+const userList = ref<SysUserVO[]>([])
+const userTotal = ref(0)
+const userQuery = reactive({ current: 1, size: 10, keyword: '' })
+
+const userColumns = [
+  { title: 'ID', dataIndex: 'id', width: 70 },
+  { title: '用户名', dataIndex: 'username', width: 150 },
+  { title: '昵称', dataIndex: 'nickname', width: 130 },
+  { title: '角色', dataIndex: 'role', width: 110 },
+  { title: '状态', dataIndex: 'status', width: 90 },
+  { title: '创建时间', dataIndex: 'createTime', width: 170 },
+  { title: '操作', key: 'action', width: 260 }
+]
+
+const formatTime = (v?: string) => (v ? String(v).replace('T', ' ').slice(0, 19) : '-')
+
+const loadUsers = async () => {
+  if (!isAdmin.value) return
+  userLoading.value = true
+  try {
+    const res = await userApi.page({
+      current: userQuery.current,
+      size: userQuery.size,
+      keyword: userQuery.keyword.trim() || undefined
+    })
+    userList.value = res?.records || []
+    userTotal.value = res?.total || 0
+  } catch {
+    // 请求拦截器已统一提示
+  } finally {
+    userLoading.value = false
+  }
+}
+
+const searchUsers = () => {
+  userQuery.current = 1
+  loadUsers()
+}
+
+const onUserPageChange = (p: any) => {
+  userQuery.current = p.current
+  loadUsers()
+}
+
+// 新增用户
+const createOpen = ref(false)
+const createSubmitting = ref(false)
+const createForm = reactive({
+  username: '',
+  password: '',
+  nickname: '',
+  role: 'user' as 'admin' | 'user'
+})
+
+const openCreate = () => {
+  createForm.username = ''
+  createForm.password = ''
+  createForm.nickname = ''
+  createForm.role = 'user'
+  createOpen.value = true
+}
+
+const submitCreate = async () => {
+  if (!createForm.username.trim()) {
+    message.warning('请输入用户名')
+    return
+  }
+  if (createForm.password.length < 8) {
+    message.warning('密码至少 8 位')
+    return
+  }
+  createSubmitting.value = true
+  try {
+    await userApi.create({
+      username: createForm.username.trim(),
+      password: createForm.password,
+      nickname: createForm.nickname.trim() || undefined,
+      role: createForm.role
+    })
+    message.success('用户已创建，可用该账号登录')
+    createOpen.value = false
+    userQuery.current = 1
+    await loadUsers()
+  } catch {
+    // 请求拦截器已统一提示
+  } finally {
+    createSubmitting.value = false
+  }
+}
+
+// 重置口令
+const pwdOpen = ref(false)
+const pwdTarget = ref<SysUserVO | null>(null)
+const pwdForm = reactive({ password: '' })
+
+const openResetPwd = (row: SysUserVO) => {
+  pwdTarget.value = row
+  pwdForm.password = ''
+  pwdOpen.value = true
+}
+
+const submitResetPwd = async () => {
+  if (!pwdTarget.value) return
+  if (pwdForm.password.length < 8) {
+    message.warning('密码至少 8 位')
+    return
+  }
+  try {
+    await userApi.resetPassword(pwdTarget.value.id, pwdForm.password)
+    message.success('口令已重置，该账号的登录态已强制失效')
+    pwdOpen.value = false
+  } catch {
+    // 请求拦截器已统一提示
+  }
+}
+
+// 启用 / 停用
+const toggleStatus = async (row: SysUserVO) => {
+  const target = row.status === 1 ? 0 : 1
+  try {
+    await userApi.updateStatus(row.id, target)
+    message.success(target === 1 ? '已启用' : '已停用，该账号的登录态已强制失效')
+    await loadUsers()
+  } catch {
+    // 请求拦截器已统一提示
+  }
+}
+
+// 删除
+const removeUser = (row: SysUserVO) => {
+  Modal.confirm({
+    title: `确认删除用户「${row.username}」？`,
+    content: '该账号将被删除且无法再登录。其名下业务数据会保留在库中（按账号隔离，不会展示给其他账号）。',
+    okText: '确认删除',
+    okType: 'danger',
+    cancelText: '取消',
+    async onOk() {
+      await userApi.remove(row.id)
+      message.success('已删除')
+      await loadUsers()
+    }
+  })
+}
+
+// 登录信息是登录后异步补齐的，跟随它的变化加载一次列表
+watch(
+  isAdmin,
+  (v) => {
+    if (v) loadUsers()
+  },
+  { immediate: true }
+)
 </script>
 
 <template>
@@ -798,7 +936,7 @@ const syncAllData = async () => {
                 <a-form-item label="主题主色调">
                   <div class="color-row">
                     <div
-                      v-for="c in ['#1677ff', '#722ed1', '#13c2c2', '#52c41a', '#fa8c16', '#eb2f96']"
+                      v-for="c in primaryOptions"
                       :key="c"
                       class="color-dot"
                       :class="{ active: appearanceForm.primaryColor === c }"
@@ -879,12 +1017,11 @@ const syncAllData = async () => {
           <div class="import-block">
             <h4 class="block-title">📥 从备份恢复</h4>
             <p class="section-desc">选择之前导出的 JSON 快照，即可批量追加/恢复数据（相同 ID 会被覆盖）。</p>
-            <input ref="fileInputRef" type="file" accept=".json" style="display:none" @change="onImportFile" />
             <a-space wrap>
-              <a-button type="primary" @click="triggerImport">
+              <a-button type="primary" disabled>
                 <CloudUploadOutlined /> 选择备份文件导入
               </a-button>
-              <a-tag color="orange">⚠ 强烈建议导入前，先导出一份当前快照做备份</a-tag>
+              <a-tag color="orange">⚠ 后端批量导入接口尚未实现，当前版本请用 JSON 全量快照留档</a-tag>
             </a-space>
           </div>
         </a-card>
@@ -971,8 +1108,8 @@ const syncAllData = async () => {
             </a-descriptions-item>
             <a-descriptions-item label="数据总记录数">{{ storageInfo.records }} 条</a-descriptions-item>
             <a-descriptions-item label="Sa-Token 活跃超时">1800 秒（30 分钟）</a-descriptions-item>
-            <a-descriptions-item label="默认管理员账号">admin / admin123</a-descriptions-item>
-            <a-descriptions-item label="飞书多维表格">✅ 已集成（本地代理模式）</a-descriptions-item>
+            <a-descriptions-item label="默认管理员账号">admin（初始口令见后端首次启动日志或 ADMIN_INIT_PASSWORD）</a-descriptions-item>
+            <a-descriptions-item label="飞书多维表格">✅ 已集成（后端代理模式）</a-descriptions-item>
           </a-descriptions>
           <a-divider />
           <h4 class="block-title">💾 存储空间占用</h4>
@@ -1111,6 +1248,112 @@ const syncAllData = async () => {
             </div>
           </div>
         </a-card>
+      </a-tab-pane>
+      <!-- 8. 用户管理（仅管理员可见） -->
+      <a-tab-pane v-if="isAdmin" key="users">
+        <template #tab><UserOutlined /> 用户管理</template>
+        <a-card class="setting-card" :bordered="false">
+          <a-alert
+            type="info"
+            show-icon
+            message="自助注册已关闭"
+            description="新增账号只能由管理员在此创建。各账号的数据互相隔离，只能看到自己名下的记录。"
+            style="margin-bottom: 16px"
+          />
+          <a-space style="margin-bottom: 12px">
+            <a-input
+              v-model:value="userQuery.keyword"
+              placeholder="搜索用户名 / 昵称"
+              allow-clear
+              style="width: 240px"
+              @press-enter="searchUsers"
+            />
+            <a-button @click="searchUsers"><ReloadOutlined /> 刷新</a-button>
+            <a-button type="primary" @click="openCreate"><PlusOutlined /> 新增用户</a-button>
+          </a-space>
+          <a-table
+            :columns="userColumns"
+            :data-source="userList"
+            :loading="userLoading"
+            row-key="id"
+            size="middle"
+            :pagination="{
+              current: userQuery.current,
+              pageSize: userQuery.size,
+              total: userTotal,
+              showSizeChanger: false,
+              onChange: onUserPageChange
+            }"
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.dataIndex === 'role'">
+                <a-tag :color="record.role === 'admin' ? 'gold' : 'default'">
+                  {{ record.role === 'admin' ? '管理员' : '普通用户' }}
+                </a-tag>
+              </template>
+              <template v-else-if="column.dataIndex === 'status'">
+                <a-tag :color="record.status === 1 ? 'green' : 'red'">
+                  {{ record.status === 1 ? '启用' : '停用' }}
+                </a-tag>
+              </template>
+              <template v-else-if="column.dataIndex === 'createTime'">
+                {{ formatTime(record.createTime) }}
+              </template>
+              <template v-else-if="column.key === 'action'">
+                <a-space>
+                  <a-button size="small" @click="openResetPwd(record)"><KeyOutlined /> 重置口令</a-button>
+                  <a-button size="small" @click="toggleStatus(record)">
+                    {{ record.status === 1 ? '停用' : '启用' }}
+                  </a-button>
+                  <a-button size="small" danger @click="removeUser(record)">删除</a-button>
+                </a-space>
+              </template>
+            </template>
+          </a-table>
+        </a-card>
+
+        <a-modal
+          v-model:open="createOpen"
+          title="新增用户"
+          ok-text="创建"
+          cancel-text="取消"
+          :confirm-loading="createSubmitting"
+          :destroyOnClose="true"
+          @ok="submitCreate"
+        >
+          <a-form layout="vertical">
+            <a-form-item label="用户名" required>
+              <a-input v-model:value="createForm.username" placeholder="3-50 个字符" />
+            </a-form-item>
+            <a-form-item label="密码" required>
+              <a-input-password v-model:value="createForm.password" placeholder="至少 8 位" />
+            </a-form-item>
+            <a-form-item label="昵称">
+              <a-input v-model:value="createForm.nickname" placeholder="不填则与用户名相同" />
+            </a-form-item>
+            <a-form-item label="角色">
+              <a-select v-model:value="createForm.role">
+                <a-select-option value="user">普通用户</a-select-option>
+                <a-select-option value="admin">管理员</a-select-option>
+              </a-select>
+            </a-form-item>
+          </a-form>
+        </a-modal>
+
+        <a-modal
+          v-model:open="pwdOpen"
+          :title="`重置口令 - ${pwdTarget?.username || ''}`"
+          ok-text="重置"
+          cancel-text="取消"
+          :destroyOnClose="true"
+          @ok="submitResetPwd"
+        >
+          <a-form layout="vertical">
+            <a-form-item label="新密码" required>
+              <a-input-password v-model:value="pwdForm.password" placeholder="至少 8 位，重置后该账号需重新登录" />
+            </a-form-item>
+          </a-form>
+        </a-modal>
       </a-tab-pane>
     </a-tabs>
   </div>

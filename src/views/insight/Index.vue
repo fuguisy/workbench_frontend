@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import {
   BulbOutlined,
   FileTextOutlined,
@@ -8,7 +8,7 @@ import {
 import { Modal, message } from 'ant-design-vue'
 import { statsApi, type InsightStatsVO, type InsightItem, type CompareItem, type NextActionItem } from '@/api/modules'
 
-// ============ 设计稿固定数据（也可用后端数据覆盖） ============
+// ============ 周期切换 ============
 type Period = 'week' | 'month' | 'quarter'
 const period = ref<Period>('week')
 const periodTabs: { key: Period; label: string }[] = [
@@ -17,7 +17,10 @@ const periodTabs: { key: Period; label: string }[] = [
   { key: 'quarter', label: '本季' }
 ]
 
-// 顶部 3 张统计卡
+// 后端字段缺失时的统一占位符（绝不使用编造的默认值）
+const EMPTY_TEXT = '—'
+
+// 顶部 3 张统计卡（数值全部取自后端真实字段，取不到则显示 “—”）
 type TopCard = {
   label: string
   value: string
@@ -27,48 +30,42 @@ type TopCard = {
   barColor: string     // 柱颜色
   barHighlight?: number// 高亮第X根
 }
-const DEFAULT_TOP_CARDS: TopCard[] = [
+// 三张卡的空白骨架：仅确定标题、单位与配色，数值待后端字段填充
+const buildEmptyCards = (): TopCard[] => [
   {
     label: '本周专注',
-    value: '12.4',
+    value: EMPTY_TEXT,
     unit: 'h',
-    extra: { text: '较上周 +18%', color: '#34C759' },
-    bars: [30, 38, 48, 62, 80],
+    extra: { text: '', color: '#A1A1AA' },
+    bars: [],
     barColor: '#5E6AD2',
     barHighlight: 4
   },
   {
     label: '任务完成率',
-    value: '82',
+    value: EMPTY_TEXT,
     unit: '%',
-    extra: { text: '3 项延期', color: '#FF9F0A' },
-    bars: [35, 45, 55, 70, 82],
+    extra: { text: '', color: '#A1A1AA' },
+    bars: [],
     barColor: '#34C759',
     barHighlight: 4
   },
   {
     label: '内容产出',
-    value: '14',
+    value: EMPTY_TEXT,
     unit: '篇',
-    extra: { text: '公众号6 · 视频5 · 小红书3', color: '#A1A1AA' },
-    bars: [22, 40, 58, 70, 78],
+    extra: { text: '', color: '#A1A1AA' },
+    bars: [],
     barColor: '#FF9F0A',
     barHighlight: 4
   }
 ]
-const topCards = ref<TopCard[]>(DEFAULT_TOP_CARDS.map(c => ({ ...c, bars: [...c.bars] })))
+const topCards = ref<TopCard[]>([])
 
-// 本周洞察 5 条
-const DEFAULT_INSIGHTS: InsightItem[] = [
-  { title: '专注时段', desc: '深夜 22-24 点效率最高，平均产出 +32%', tag: '22-24 点' },
-  { title: '任务节奏', desc: '周三、周四交付最密集，建议错峰安排', tag: '周三-周四' },
-  { title: '内容表现', desc: '小红书互动率最高，短视频涨粉最快', tag: '互动 8.2%' },
-  { title: '习惯坚持', desc: '阅读连续 21 天，运动中断 2 次需补回', tag: '21 天' },
-  { title: 'AI 协作', desc: '本月消耗 1.2M tokens，多用于写作与代码', tag: '1.2M' }
-]
-const insights = ref<InsightItem[]>([...DEFAULT_INSIGHTS])
+// 本周洞察：仅来自后端 insights 字段
+const insights = ref<InsightItem[]>([])
 
-// 周期对比
+// 周期对比：仅来自后端 compares 字段
 type CompareRow = {
   label: string
   last: number     // 上周 0-100
@@ -76,32 +73,32 @@ type CompareRow = {
   delta: string
   deltaColor: string
 }
-const DEFAULT_COMPARES: CompareRow[] = [
-  { label: '专注时长',   last: 52, cur: 70, delta: '+18%',  deltaColor: '#34C759' },
-  { label: '任务完成率', last: 60, cur: 67, delta: '+7pp',  deltaColor: '#34C759' },
-  { label: '内容产出',   last: 48, cur: 75, delta: '+27%',  deltaColor: '#34C759' }
-]
-const compares = ref<CompareRow[]>(DEFAULT_COMPARES.map(c => ({ ...c })))
+const compares = ref<CompareRow[]>([])
 
-// 下周行动项
+// 下周行动项：仅来自后端 nextActions 字段
 type Action = {
   id: number
+  key: string            // 列表渲染用的稳定 key
   title: string
   role: '开发' | '个人' | '创作'
   done: boolean
 }
-const DEFAULT_ACTIONS: Action[] = [
-  { id: 1, title: '周四前完成产品评审会纪要整理', role: '开发', done: true },
-  { id: 2, title: '把深夜专注时段前移到 20-22 点，保持作息', role: '个人', done: false },
-  { id: 3, title: 'B站《独立开发工具》脚本定稿并预约拍摄', role: '创作', done: false }
-]
-const actions = ref<Action[]>(DEFAULT_ACTIONS.map(a => ({ ...a })))
+const actions = ref<Action[]>([])
 const roleColor = (r: Action['role']) =>
   r === '开发' ? '#5E6AD2' : r === '创作' ? '#FF9F0A' : '#34C759'
 
-// ============ 后端数据加载（叠加到默认展示上，有新字段覆盖，否则 fallback） ============
+// 后端 compares 返回的是 key（FOCUS / TODO_RATE / CONTENT），这里映射为展示名称
+const COMPARE_LABEL: Record<string, string> = {
+  FOCUS: '专注时长',
+  TODO_RATE: '任务完成率',
+  CONTENT: '内容产出'
+}
+
+// ============ 后端数据加载（只渲染真实字段，缺失用 “—” 占位，失败走错误空态） ============
 const loading = ref(false)
+const loadError = ref(false)
 const data = ref<InsightStatsVO | null>(null)
+const hasRealData = computed(() => !!data.value)
 
 const formatSignPct = (val?: number) => {
   if (val === undefined || val === null) return ''
@@ -111,13 +108,14 @@ const formatSignPct = (val?: number) => {
 
 const loadData = async () => {
   loading.value = true
+  loadError.value = false
   try {
     const res = await statsApi.insight()
     data.value = res || null
     const vo = res as InsightStatsVO | null
 
-    // ===== 覆盖 topCards =====
-    const tc: TopCard[] = DEFAULT_TOP_CARDS.map(c => ({ ...c, bars: [...c.bars] }))
+    // ===== topCards：只写入后端真实字段，缺失保持 “—” =====
+    const tc = buildEmptyCards()
     // Card 0: 本周专注
     if (vo?.focusHoursThisWeek !== undefined && vo.focusHoursThisWeek !== null) {
       tc[0].value = String(Math.round(vo.focusHoursThisWeek * 10) / 10)
@@ -130,9 +128,11 @@ const loadData = async () => {
       }
     }
     if (vo?.barsFocus?.length) tc[0].bars = [...vo.barsFocus]
-    // Card 1: 任务完成率
+    // Card 1: 任务完成率（优先 todoDoneRate，退化为 todoStats 真实计算）
     if (vo?.todoDoneRate !== undefined && vo.todoDoneRate !== null) {
       tc[1].value = String(Math.round(vo.todoDoneRate))
+    } else if (vo?.todoStats && vo.todoStats.total) {
+      tc[1].value = String(Math.round((vo.todoStats.done / vo.todoStats.total) * 100))
     }
     const overdue = vo?.todoOverdueCount
     if (overdue !== undefined && overdue !== null) {
@@ -140,11 +140,6 @@ const loadData = async () => {
         text: overdue > 0 ? `${overdue} 项延期` : '无延期',
         color: overdue > 0 ? '#FF9F0A' : '#34C759'
       }
-    }
-    if (vo?.todoStats) {
-      const t = vo.todoStats
-      const rate = t.total ? Math.round((t.done / t.total) * 100) : 0
-      if (vo.todoDoneRate === undefined || vo.todoDoneRate === null) tc[1].value = String(rate)
     }
     if (vo?.barsTodo?.length) tc[1].bars = [...vo.barsTodo]
     // Card 2: 内容产出
@@ -163,36 +158,47 @@ const loadData = async () => {
     if (vo?.barsContent?.length) tc[2].bars = [...vo.barsContent]
     topCards.value = tc
 
-    // ===== 覆盖 insights =====
-    if (vo?.insights && vo.insights.length > 0) {
-      insights.value = vo.insights.map(it => ({ title: it.title, desc: it.desc, tag: it.tag }))
-    }
+    // ===== insights：后端未返回时留空，模板展示空态 =====
+    insights.value = (vo?.insights || []).map(it => ({ title: it.title, desc: it.desc, tag: it.tag }))
 
-    // ===== 覆盖 compares =====
-    if (vo?.compares && vo.compares.length > 0) {
-      compares.value = vo.compares.map(c => ({
-        label: c.label,
+    // ===== compares：后端字段是 key，映射为展示名称 =====
+    compares.value = (vo?.compares || []).map(c => {
+      const raw = c as unknown as { key?: string; label?: string }
+      const label = raw.label || (raw.key ? COMPARE_LABEL[raw.key] || raw.key : '')
+      return {
+        label,
         last: c.last,
         cur: c.cur,
         delta: c.delta,
         deltaColor: c.deltaColor
-      }))
-    }
+      }
+    })
 
-    // ===== 覆盖 nextActions =====
-    if (vo?.nextActions && vo.nextActions.length > 0) {
-      const mapped: Action[] = vo.nextActions.map(a => {
-        const roleMap: Record<string, Action['role']> = {
-          '开发': '开发', 'DEV': '开发',
-          '创作': '创作', 'CONTENT': '创作', '个人': '个人', 'LIFE': '个人'
-        }
-        const r = (roleMap[a.role] as Action['role']) || '个人'
-        return { id: Number(a.id) || Date.now() + Math.random(), title: a.title, role: r, done: !!a.done }
-      })
-      actions.value = mapped
-    }
+    // ===== nextActions：key 用 index 拼接标题，避免随机值 =====
+    actions.value = (vo?.nextActions || []).map((a, idx) => {
+      const roleMap: Record<string, Action['role']> = {
+        '开发': '开发', 'DEV': '开发',
+        '创作': '创作', 'CONTENT': '创作', 'CREATE': '创作',
+        '个人': '个人', 'LIFE': '个人', 'PERSONAL': '个人'
+      }
+      const r = (roleMap[a.role] as Action['role']) || '个人'
+      return {
+        id: Number(a.id) || idx,
+        key: `${idx}-${a.title}`,
+        title: a.title,
+        role: r,
+        done: !!a.done
+      }
+    })
   } catch (e) {
-    // 静默失败，使用本地 mock 数据
+    // 接口失败：不再用本地 mock 兜底，清空数据并提示用户重试
+    loadError.value = true
+    data.value = null
+    topCards.value = []
+    insights.value = []
+    compares.value = []
+    actions.value = []
+    message.error('数据加载失败')
   } finally {
     loading.value = false
   }
@@ -243,18 +249,26 @@ const toggleAction = (a: Action) => { a.done = !a.done }
       </div>
     </div>
 
+    <!-- 加载失败空态：不再用本地假数据兜底 -->
+    <div v-if="loadError && !hasRealData" class="load-error">
+      <div class="load-error-icon">⚠️</div>
+      <div class="load-error-text">加载失败，请重试</div>
+      <button class="btn btn-primary" @click="loadData">重试</button>
+    </div>
+
+    <template v-else>
     <!-- 3 张顶部统计卡 -->
     <div class="top-cards">
       <div v-for="(c, i) in topCards" :key="i" class="top-card">
         <div class="card-left">
           <div class="card-label">{{ c.label }}</div>
           <div class="card-value">
-            {{ c.value }}<span v-if="c.unit" class="unit">{{ c.unit }}</span>
+            {{ c.value }}<span v-if="c.unit && c.value !== EMPTY_TEXT" class="unit">{{ c.unit }}</span>
           </div>
           <div class="card-extra" :style="{ color: c.extra.color }">{{ c.extra.text }}</div>
         </div>
         <!-- 右侧迷你 5 柱 SVG 条形图 -->
-        <svg class="mini-bars" viewBox="0 0 120 60" preserveAspectRatio="none" aria-hidden="true">
+        <svg v-if="c.bars.length" class="mini-bars" viewBox="0 0 120 60" preserveAspectRatio="none" aria-hidden="true">
           <g transform="translate(8, 54)">
             <rect
               v-for="(b, bi) in c.bars"
@@ -275,7 +289,7 @@ const toggleAction = (a: Action) => { a.done = !a.done }
     <!-- 本周洞察 -->
     <section class="panel">
       <div class="panel-title">本周洞察</div>
-      <ul class="insight-list">
+      <ul v-if="insights.length" class="insight-list">
         <li v-for="(it, i) in insights" :key="i" class="insight-row">
           <span class="bulb"><BulbOutlined /></span>
           <div class="row-body">
@@ -285,12 +299,13 @@ const toggleAction = (a: Action) => { a.done = !a.done }
           <div class="row-tag">{{ it.tag }}</div>
         </li>
       </ul>
+      <div v-else class="panel-empty">暂无洞察数据</div>
     </section>
 
     <!-- 周期对比·本周 vs 上周 -->
     <section class="panel">
       <div class="panel-title">周期对比 · 本周 vs 上周</div>
-      <div class="compare-list">
+      <div v-if="compares.length" class="compare-list">
         <div v-for="(c, i) in compares" :key="i" class="compare-row">
           <div class="cmp-label">{{ c.label }}</div>
           <div class="cmp-bars">
@@ -310,15 +325,16 @@ const toggleAction = (a: Action) => { a.done = !a.done }
           <div class="cmp-delta" :style="{ color: c.deltaColor }">{{ c.delta }}</div>
         </div>
       </div>
+      <div v-else class="panel-empty">暂无对比数据</div>
     </section>
 
     <!-- 下周行动项 -->
     <section class="panel">
       <div class="panel-title">下周行动项</div>
-      <div class="action-list">
+      <div v-if="actions.length" class="action-list">
         <label
           v-for="a in actions"
-          :key="a.id"
+          :key="a.key"
           class="action-row"
           :class="{ done: a.done }"
           @click="toggleAction(a)"
@@ -330,7 +346,9 @@ const toggleAction = (a: Action) => { a.done = !a.done }
           <span class="action-role" :style="{ background: roleColor(a.role) + '22', color: roleColor(a.role), borderColor: roleColor(a.role) + '55' }">{{ a.role }}</span>
         </label>
       </div>
+      <div v-else class="panel-empty">暂无行动项</div>
     </section>
+    </template>
 
     <a-spin :spinning="loading" style="display:none"></a-spin>
   </div>
@@ -399,6 +417,23 @@ const toggleAction = (a: Action) => { a.done = !a.done }
   border-color: var(--color-border, #1C1D22);
 }
 .btn-ghost:hover { background: var(--color-bg-hover, #15161A); }
+
+/* ===== 加载失败空态 ===== */
+.load-error {
+  flex: 1;
+  min-height: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: var(--color-bg-card, #0D0E10);
+  border: 1px solid var(--color-border, #1C1D22);
+  border-radius: var(--radius-lg, 14px);
+  padding: 48px 24px;
+}
+.load-error-icon { font-size: 36px; line-height: 1; }
+.load-error-text { font-size: 14px; color: var(--color-text-secondary); }
 
 /* 周期切换 Tab */
 .period-tabs {
@@ -482,6 +517,13 @@ const toggleAction = (a: Action) => { a.done = !a.done }
   color: var(--color-text);
   margin-bottom: 12px;
   letter-spacing: -0.1px;
+}
+/* 后端未返回该面板数据时的空态 */
+.panel-empty {
+  padding: 28px 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--color-text-secondary);
 }
 
 /* ===== 本周洞察 list ===== */

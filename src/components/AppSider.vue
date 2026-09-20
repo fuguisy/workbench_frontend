@@ -22,7 +22,14 @@ import {
   BarChartOutlined,
   SettingOutlined,
   UserOutlined,
-  FunnelPlotOutlined
+  FunnelPlotOutlined,
+  BulbOutlined,
+  SendOutlined,
+  BugOutlined,
+  ProjectOutlined,
+  CloudServerOutlined,
+  BookOutlined,
+  HighlightOutlined
 } from '@ant-design/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
@@ -64,22 +71,30 @@ const MENU: MenuItem[] = [
   { key: '/focus',    label: '专注 / 番茄钟', icon: ClockCircleOutlined, group: 'efficiency', order: 2 },
   { key: '/okr',      label: '目标 / OKR', icon: AimOutlined,          group: 'efficiency', order: 3 },
 
-  // 【程序员】
+  // 【程序员】（与路由 dev 分组的 7 个页面保持一致，避免出现"有路由无入口"的死页面）
   { key: '/repo',     label: '代码仓库',   icon: CodeOutlined,         group: 'dev',        order: 1 },
   { key: '/ai',       label: 'AI 实验室',  icon: ExperimentOutlined,   group: 'dev',        order: 2 },
-  { key: '__cmd__',   label: '命令面板 ⌘K', icon: ThunderboltOutlined, group: 'dev',        order: 3, cmdOnly: true },
+  { key: '/bugs',     label: 'Bug 台账',   icon: BugOutlined,          group: 'dev',        order: 3 },
+  { key: '/project',  label: '项目进度',   icon: ProjectOutlined,      group: 'dev',        order: 4 },
+  { key: '/svc',      label: '服务器 & 自部署', icon: CloudServerOutlined, group: 'dev',    order: 5 },
+  { key: '/read',     label: '学习阅读',   icon: BookOutlined,         group: 'dev',        order: 6 },
+  { key: '/tech',     label: '技术笔记',   icon: FileTextOutlined,     group: 'dev',        order: 7 },
+  { key: '__cmd__',   label: '命令面板 ⌘K', icon: ThunderboltOutlined, group: 'dev',        order: 8, cmdOnly: true },
 
   // 【自媒体】
   { key: '/media-board', label: '自媒体看板', icon: PlayCircleOutlined, group: 'media',      order: 1 },
-  { key: '/media',    label: '素材库',     icon: PictureOutlined,      group: 'media',      order: 2 },
+  { key: '/topic',    label: '选题池',     icon: BulbOutlined,         group: 'media',      order: 2 },
   { key: '/docs',     label: '创作稿件库', icon: FileTextOutlined,     group: 'media',      order: 3 },
-  { key: '/lead',     label: '线索 / 商机', icon: FunnelPlotOutlined,  group: 'media',      order: 4 },
+  { key: '/media',    label: '素材库',     icon: PictureOutlined,      group: 'media',      order: 4 },
+  { key: '/publish',  label: '发布管理',   icon: SendOutlined,         group: 'media',      order: 5 },
+  { key: '/lead',     label: '线索 / 商机', icon: FunnelPlotOutlined,  group: 'media',      order: 6 },
 
   // 【知识与个人】
   { key: '/markdown', label: '知识库',     icon: ReadOutlined,         group: 'personal',   order: 1 },
-  { key: '/checkin',  label: '习惯打卡',   icon: ClockCircleOutlined,  group: 'personal',   order: 2 },
-  { key: '/money',    label: '收支记账',   icon: WalletOutlined,       group: 'personal',   order: 3 },
-  { key: '/subscription', label: '订阅账单', icon: SwapOutlined,      group: 'personal',   order: 4 },
+  { key: '/idea',     label: '灵感记录',   icon: HighlightOutlined,    group: 'personal',   order: 2 },
+  { key: '/checkin',  label: '习惯打卡',   icon: ClockCircleOutlined,  group: 'personal',   order: 3 },
+  { key: '/money',    label: '收支记账',   icon: WalletOutlined,       group: 'personal',   order: 4 },
+  { key: '/subscription', label: '订阅账单', icon: SwapOutlined,       group: 'personal',   order: 5 },
 
   // 【系统】
   { key: '/secrets',  label: '密码管理',   icon: KeyOutlined,          group: 'system',     order: 1 },
@@ -102,7 +117,16 @@ const groupedMenu = computed(() => {
   })
 })
 
-const selectedKeys = computed<string[]>(() => [route.path])
+// 精确匹配优先，其次按最长前缀匹配，兼容未来出现的子路由（如 /markdown/:id）
+const selectedKeys = computed<string[]>(() => {
+  const path = route.path
+  const exact = MENU.find(m => !m.cmdOnly && m.key === path)
+  if (exact) return [exact.key]
+  const prefix = MENU
+    .filter(m => !m.cmdOnly && m.key !== '/' && path.startsWith(m.key + '/'))
+    .sort((a, b) => b.key.length - a.key.length)[0]
+  return [prefix ? prefix.key : path]
+})
 
 const nickname = computed(() => authStore.userInfo?.nickname || '晓贵')
 const avatar = computed(() => authStore.userInfo?.avatar || '')
@@ -121,7 +145,9 @@ const handleClick = (item: MenuItem) => {
     window.dispatchEvent(new CustomEvent('cmdpalette:open'))
     return
   }
-  router.push(item.key).catch(() => {})
+  // 已在当前页面则不重复导航（避免 vue-router 抛出重复导航告警）
+  if (item.key === route.path) return
+  router.push(item.key)
 }
 </script>
 

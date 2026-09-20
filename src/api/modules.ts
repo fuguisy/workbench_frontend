@@ -170,6 +170,45 @@ export interface Lead {
   createTime?: string
   updateTime?: string
 }
+// OPC 选题池：热点 / 灵感 / 客户咨询 → 可跟踪的选题
+export interface Topic {
+  id?: number
+  userId?: number
+  title: string
+  source?: string
+  sourceUrl?: string
+  keywords?: string
+  platform?: string
+  stage?: string
+  priority?: string
+  docId?: number
+  markdownId?: number
+  planDate?: string
+  angle?: string
+  note?: string
+  createTime?: string
+  updateTime?: string
+}
+// OPC 发布管理：一条内容 × 一个平台 = 一条发布记录 + 效果数据
+export interface Publish {
+  id?: number
+  userId?: number
+  topicId?: number
+  title: string
+  platform?: string
+  status?: string
+  planTime?: string
+  publishTime?: string
+  url?: string
+  views?: number
+  likes?: number
+  comments?: number
+  collects?: number
+  leads?: number
+  note?: string
+  createTime?: string
+  updateTime?: string
+}
 export interface Checkin {
   id?: number
   userId?: number
@@ -326,6 +365,8 @@ export const mediaApi = createCrud<Media>('/media')
 export const mediaBoardApi = createCrud<MediaBoard>('/media-board')
 export const docsApi = createCrud<Docs>('/docs')
 export const leadApi = createCrud<Lead>('/lead')
+export const topicApi = createCrud<Topic>('/topic')
+export const publishApi = createCrud<Publish>('/publish')
 export const checkinApi = createCrud<Checkin>('/checkin')
 
 // 习惯打卡面板扩展接口
@@ -364,7 +405,8 @@ const _notificationBase = createCrud<Notification>('/notification')
 export const notificationApi = {
   ..._notificationBase,
   readOne: (id: number) => request.post<any, void>(`/notification/${id}/read`),
-  readAll: () => request.post<any, void>('/notification/read-all')
+  readAll: () => request.post<any, void>('/notification/read-all'),
+  unreadCount: () => request.get<any, number>('/notification/unread-count')
 }
 export const calendarApi = createCrud<CalendarEvent>('/calendar')
 export const okrApi = createCrud<OkrObjective>('/okr')
@@ -400,7 +442,10 @@ export interface MarkdownApi extends CrudBase<MarkdownDoc> {
   saveToFile: (id: number, dir?: string) => Promise<{ path: string }>
   openTypora: (id: number) => Promise<string>
   openDefault: (id: number) => Promise<string>
+  themes: () => Promise<ThemeItem[]>
+  render: (content: string, theme: string) => Promise<{ html: string }>
 }
+export interface ThemeItem { key: string; name: string; color: string; desc: string }
 const _mdBase: Record<string, any> = createCrud<MarkdownDoc>('/markdown')
 _mdBase.upload = async (file: File, category?: string, saveDir?: string) => {
   const fd = new FormData()
@@ -412,13 +457,16 @@ _mdBase.upload = async (file: File, category?: string, saveDir?: string) => {
   })
   return res as any
 }
-_mdBase.downloadUrl = (id: number) => `/markdown/download/${id}`
+_mdBase.downloadUrl = (id: number) => `/api/markdown/download/${id}`
 _mdBase.saveToFile = (id: number, dir?: string) => {
   const q = dir ? `?dir=${encodeURIComponent(dir)}` : ''
   return request.post<any, any>(`/markdown/save-to-file/${id}${q}`, {})
 }
 _mdBase.openTypora = (id: number) => request.post<any, any>(`/markdown/open-typora/${id}`, {})
 _mdBase.openDefault = (id: number) => request.post<any, any>(`/markdown/open-default/${id}`, {})
+_mdBase.themes = () => request.get<any, ThemeItem[]>('/markdown/themes')
+_mdBase.render = (content: string, theme: string) =>
+  request.post<any, any>('/markdown/render', { content, theme })
 export const markdownApi = _mdBase as MarkdownApi
 
 // 统计接口

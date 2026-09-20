@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { Modal } from 'ant-design-vue'
 import {
@@ -9,7 +9,14 @@ import {
   EditOutlined,
   UserOutlined,
   LogoutOutlined,
-  SettingOutlined
+  SettingOutlined,
+  HomeOutlined,
+  CheckSquareOutlined,
+  ReadOutlined,
+  BulbOutlined,
+  SendOutlined,
+  FireOutlined,
+  WalletOutlined
 } from '@ant-design/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
@@ -23,20 +30,39 @@ const nickname = computed(() => authStore.userInfo?.nickname || '晓贵')
 const avatar = computed(() => authStore.userInfo?.avatar || '')
 const unreadCount = computed(() => appStore.unreadCount)
 
-// 登录后加载真实未读数
+// 登录后加载真实未读数（走后端计数接口，避免为了一个数字拉取全量通知列表）
 const loadUnread = async () => {
   try {
-    const list = await notificationApi.list()
-    const unread = (list || []).filter(n => {
-      const r = (n as any).read
-      return !(r === true || r === 1 || r === '1' || r === 'true')
-    }).length
-    appStore.unreadCount = unread
+    const count = await notificationApi.unreadCount()
+    appStore.unreadCount = Number(count) || 0
   } catch { /* 静默失败 */ }
 }
 
 const searchFocused = ref(false)
 const cmdOpen = ref(false)
+// 命令面板的输入关键词（此前误绑到 cmdOpen 布尔值上，导致无法输入）
+const cmdQuery = ref('')
+
+// 可跳转的目标，keys 用于搜索匹配（中英文别名）
+const cmdItems = [
+  { path: '/', label: '工作台首页', icon: HomeOutlined, keys: 'home dashboard 首页 工作台 概览' },
+  { path: '/todo', label: '任务看板', icon: CheckSquareOutlined, keys: 'todo task 任务 待办 看板' },
+  { path: '/markdown', label: '知识库', icon: ReadOutlined, keys: 'markdown doc 知识库 笔记 文档' },
+  { path: '/topic', label: '选题池', icon: BulbOutlined, keys: 'topic 选题 灵感 创意' },
+  { path: '/publish', label: '发布管理', icon: SendOutlined, keys: 'publish 发布 分发 推送' },
+  { path: '/hot', label: '热点监控', icon: FireOutlined, keys: 'hot 热点 热搜 趋势' },
+  { path: '/money', label: '收支记账', icon: WalletOutlined, keys: 'money 记账 收支 账本 预算' },
+  { path: '/settings', label: '工作台设置', icon: SettingOutlined, keys: 'setting 设置 配置 偏好' }
+]
+
+const filteredCmdItems = computed(() => {
+  const q = cmdQuery.value.trim().toLowerCase()
+  if (!q) return cmdItems
+  return cmdItems.filter(i => `${i.label} ${i.keys}`.toLowerCase().includes(q))
+})
+
+// 每次打开面板重置关键词
+watch(cmdOpen, open => { if (open) cmdQuery.value = '' })
 
 // ⌘K 全局快捷键 + 命令面板事件
 const onKeydown = (e: KeyboardEvent) => {
@@ -188,40 +214,31 @@ const goCmd = (path: string) => {
         <div class="cmd-search-row">
           <SearchOutlined class="cmd-icon" />
           <input
-            ref="cmdInput"
-            v-model="cmdOpen"
+            v-model="cmdQuery"
             class="cmd-input"
             placeholder="输入命令或搜索..."
             autofocus
             @keydown.esc="cmdOpen = false"
+            @keydown.enter="filteredCmdItems.length && goCmd(filteredCmdItems[0].path)"
           />
           <kbd class="cmd-kbd">ESC</kbd>
         </div>
         <div class="cmd-results">
           <div class="cmd-group-title">快速跳转</div>
-          <div class="cmd-item" @click="goCmd('/todo')">
-            <CheckSquareOutlined class="cmd-item-icon" /><span>任务看板</span>
-          </div>
-          <div class="cmd-item" @click="goCmd('/markdown')">
-            <ReadOutlined class="cmd-item-icon" /><span>知识库</span>
-          </div>
-          <div class="cmd-item" @click="goCmd('/settings')">
-            <SettingOutlined class="cmd-item-icon" /><span>工作台设置</span>
+          <div v-if="!filteredCmdItems.length" class="cmd-empty">没有匹配的页面</div>
+          <div
+            v-for="item in filteredCmdItems"
+            :key="item.path"
+            class="cmd-item"
+            @click="goCmd(item.path)"
+          >
+            <component :is="item.icon" class="cmd-item-icon" /><span>{{ item.label }}</span>
           </div>
         </div>
       </div>
     </div>
   </Teleport>
 </template>
-
-<script lang="ts">
-// 补充命令面板用到的图标 import
-import {
-  CheckSquareOutlined,
-  ReadOutlined
-} from '@ant-design/icons-vue'
-export default { components: { CheckSquareOutlined, ReadOutlined } }
-</script>
 
 <style scoped>
 .app-header {
@@ -478,4 +495,10 @@ export default { components: { CheckSquareOutlined, ReadOutlined } }
 }
 .cmd-item:hover { background: var(--color-bg-hover); }
 .cmd-item-icon { width: 18px; color: var(--color-text-secondary); font-size: 15px; }
+.cmd-empty {
+  padding: 24px 12px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+}
 </style>

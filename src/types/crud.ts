@@ -22,7 +22,7 @@ export interface FormField {
   key: string
   label: string
   type: 'input' | 'textarea' | 'select' | 'number' | 'date'
-  options?: { label: string; value: string }[]
+  options?: { label: string; value: string | number }[]
   required?: boolean
   placeholder?: string
   span?: number
@@ -32,5 +32,5 @@ export interface SearchField {
   key: string
   label: string
   type: 'input' | 'select'
-  options?: { label: string; value: string }[]
+  options?: { label: string; value: string | number }[]
 }
