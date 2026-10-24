@@ -623,10 +623,10 @@ const statTooltips: Record<string, string> = {
 
     <!-- 搜索 + 筛选标签 -->
     <div class="st">
-      <span class="stt"><AimOutlined style="color:#5E6AD2;margin-right:6px" />{{ selectedCategory || '全部目标' }} <span class="scu">({{ sorted.length }})</span></span>
+      <span class="stt"><AimOutlined style="color:var(--color-primary);margin-right:6px" />{{ selectedCategory || '全部目标' }} <span class="scu">({{ sorted.length }})</span></span>
       <Tooltip title="同时检索O目标标题和KR关键结果标题">
         <a-input v-model:value="searchText" placeholder="搜索O目标/KR关键结果" allow-clear size="small" style="width:260px">
-          <template #prefix><SearchOutlined style="color:#71717A" /></template>
+          <template #prefix><SearchOutlined style="color:var(--color-text-tertiary)" /></template>
         </a-input>
       </Tooltip>
     </div>
@@ -760,7 +760,7 @@ const statTooltips: Record<string, string> = {
       <a-form layout="vertical">
         <a-form-item label="完成评分（0.0 - 1.0）">
           <a-input-number v-model:value="scoreForm.score" :min="0" :max="1" :step="0.1" :precision="1" :style="{width:'100%'}" />
-          <div style="font-size:12px;color:#71717A;margin-top:4px">0.3=未达成，0.7=基本达成，1.0=超额完成</div>
+          <div style="font-size:12px;color:var(--color-text-tertiary);margin-top:4px">0.3=未达成，0.7=基本达成，1.0=超额完成</div>
         </a-form-item>
         <a-form-item label="复盘备注">
           <a-textarea v-model:value="scoreForm.review" :rows="5" placeholder="回顾目标执行过程，总结经验教训" />

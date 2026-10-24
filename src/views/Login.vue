@@ -62,10 +62,19 @@ const onInputKey = (e: KeyboardEvent) => {
 
 const hasRememberedUser = computed(() => !!localStorage.getItem('wb-login-user'))
 
-// 快速填充演示账号
-const fillDemo = () => {
-  form.username = 'admin'
-  form.password = 'admin123'
+// 测试账号一键填充。
+// 口令刻意不写在源码里：从 .env.local 的 VITE_TEST_USER / VITE_TEST_PASSWORD 读取
+// （该文件已被 .gitignore 忽略）。两者任一为空或非开发模式时，卡片整体不渲染，
+// 所以生产构建不会把口令内联进 JS 产物。
+const TEST_USERNAME = import.meta.env.VITE_TEST_USER as string | undefined
+const TEST_PASSWORD = import.meta.env.VITE_TEST_PASSWORD as string | undefined
+const showTestCard = computed(
+  () => import.meta.env.DEV && !!TEST_USERNAME && !!TEST_PASSWORD
+)
+
+const fillTest = () => {
+  form.username = TEST_USERNAME || ''
+  form.password = TEST_PASSWORD || ''
   checkPwd()
 }
 
@@ -220,32 +229,33 @@ onBeforeUnmount(() => { cancelAnimationFrame(rafId) })
           </button>
         </form>
 
-        <!-- 分割线 -->
-        <div class="divider">
-          <span>或快速体验</span>
-        </div>
+        <!-- 测试账号（仅本地开发环境；口令来自 .env.local，不进源码） -->
+        <template v-if="showTestCard">
+          <div class="divider">
+            <span>或快速体验</span>
+          </div>
 
-        <!-- 演示账号 -->
-        <div class="demo-card" @click="fillDemo">
-          <div class="demo-left">
-            <div class="demo-icon">
-              <SafetyOutlined />
-            </div>
-            <div class="demo-info">
-              <div class="demo-title">演示账号</div>
-              <div class="demo-cred">
-                <span class="cred-key">用户名</span>
-                <span class="cred-val">admin</span>
-                <span class="cred-sep">·</span>
-                <span class="cred-key">密码</span>
-                <span class="cred-val">admin123</span>
+          <div class="demo-card" @click="fillTest">
+            <div class="demo-left">
+              <div class="demo-icon">
+                <SafetyOutlined />
+              </div>
+              <div class="demo-info">
+                <div class="demo-title">测试账号</div>
+                <div class="demo-cred">
+                  <span class="cred-key">用户名</span>
+                  <span class="cred-val">{{ TEST_USERNAME }}</span>
+                  <span class="cred-sep">·</span>
+                  <span class="cred-key">密码</span>
+                  <span class="cred-val">••••••••</span>
+                </div>
               </div>
             </div>
+            <div class="demo-action">
+              一键填充 <span class="arrow">→</span>
+            </div>
           </div>
-          <div class="demo-action">
-            一键填充 <span class="arrow">→</span>
-          </div>
-        </div>
+        </template>
       </div>
 
       <div class="login-footer">
@@ -577,7 +587,7 @@ onBeforeUnmount(() => { cancelAnimationFrame(rafId) })
   white-space: nowrap;
 }
 
-/* 演示账号卡片 */
+/* 测试账号卡片（类名沿用 demo-*，仅作样式钩子） */
 .demo-card {
   display: flex;
   align-items: center;

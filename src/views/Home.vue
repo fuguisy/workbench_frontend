@@ -87,7 +87,7 @@ const priorityMeta: Record<string, { label: string; color: string; bg: string; b
   P0: { label: 'P0', color: '#FF453A', bg: 'rgba(255,69,58,0.12)', border: 'rgba(255,69,58,0.30)' },
   P1: { label: 'P1', color: '#FF9F0A', bg: 'rgba(255,159,10,0.12)', border: 'rgba(255,159,10,0.30)' },
   P2: { label: 'P2', color: '#0A84FF', bg: 'rgba(10,132,255,0.12)', border: 'rgba(10,132,255,0.30)' },
-  P3: { label: 'P3', color: '#A1A1AA', bg: 'rgba(161,161,170,0.12)', border: 'rgba(161,161,170,0.30)' },
+  P3: { label: 'P3', color: 'var(--color-text-secondary)', bg: 'rgba(161,161,170,0.12)', border: 'rgba(161,161,170,0.30)' },
   high: { label: '高', color: '#FF453A', bg: 'rgba(255,69,58,0.12)', border: 'rgba(255,69,58,0.30)' },
   medium: { label: '中', color: '#FF9F0A', bg: 'rgba(255,159,10,0.12)', border: 'rgba(255,159,10,0.30)' },
   low: { label: '低', color: '#0A84FF', bg: 'rgba(10,132,255,0.12)', border: 'rgba(10,132,255,0.30)' }
@@ -146,7 +146,7 @@ const overviewStats = computed(() => {
   const weekRate = weekTotal > 0 ? Math.round((weekDone / weekTotal) * 100) : 0
   const monthOutput = (d?.mediaBoardCount ?? 0) + (d?.docsCount ?? 0) * 2 + (d?.techNoteCount ?? 0) * 3
   return {
-    today: { label: '今日任务', value: todayCount, suffix: '项', icon: CalendarOutlined, color: '#5E6AD2', soft: 'rgba(94,106,210,0.12)' },
+    today: { label: '今日任务', value: todayCount, suffix: '项', icon: CalendarOutlined, color: 'var(--color-primary)', soft: 'rgba(94,106,210,0.12)' },
     doing: { label: '进行中', value: doingCount, suffix: '个', icon: PlayCircleOutlined, color: '#FF9F0A', soft: 'rgba(255,159,10,0.12)' },
     weekRate: { label: '本周完成率', value: weekRate, suffix: '%', icon: CheckCircleOutlined, color: '#34C759', soft: 'rgba(52,199,89,0.12)' },
     monthOutput: { label: '本月产出', value: monthOutput, suffix: '件', icon: DashboardOutlined, color: '#0A84FF', soft: 'rgba(10,132,255,0.12)' }
@@ -257,7 +257,7 @@ const goPath = (path: string) => router.push(path)
       </div>
       <div class="welcome-stats-mini">
         <div class="ws-item">
-          <div class="ws-val" style="color:#5E6AD2">{{ overviewStats.today.value }}</div>
+          <div class="ws-val" style="color:var(--color-primary)">{{ overviewStats.today.value }}</div>
           <div class="ws-lbl">今日待办</div>
         </div>
         <div class="ws-divider" />
@@ -389,8 +389,8 @@ const goPath = (path: string) => router.push(path)
                 transform="rotate(-90 70 70)"
                 :style="checkinRingPath(52, 70, checkinRingData.rate)"
               />
-              <text x="70" y="62" text-anchor="middle" fill="#FAFAFA" font-size="28" font-weight="700">{{ checkinRingData.rate }}%</text>
-              <text x="70" y="84" text-anchor="middle" fill="#A1A1AA" font-size="11">完成率</text>
+              <text x="70" y="62" text-anchor="middle" fill="var(--color-text)" font-size="28" font-weight="700">{{ checkinRingData.rate }}%</text>
+              <text x="70" y="84" text-anchor="middle" fill="var(--color-text-secondary)" font-size="11">完成率</text>
             </svg>
             <div class="ring-legend">
               <div class="rl-item done">
@@ -412,7 +412,7 @@ const goPath = (path: string) => router.push(path)
           <div class="panel-header no-pad">
             <div>
               <div class="panel-title small">
-                <UserAddOutlined style="color:#5E6AD2" /> 涨粉周趋势
+                <UserAddOutlined style="color:var(--color-primary)" /> 涨粉周趋势
               </div>
               <div class="panel-sub small">近7天 · 累计 +{{ fansTrendData.total }}</div>
             </div>
@@ -425,14 +425,14 @@ const goPath = (path: string) => router.push(path)
             <svg v-else viewBox="0 0 320 140" class="fans-svg" preserveAspectRatio="none">
               <defs>
                 <linearGradient id="fans-area" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stop-color="#5E6AD2" stop-opacity="0.30" />
-                  <stop offset="100%" stop-color="#5E6AD2" stop-opacity="0.02" />
+                  <stop offset="0%" stop-color="var(--color-primary)" stop-opacity="0.30" />
+                  <stop offset="100%" stop-color="var(--color-primary)" stop-opacity="0.02" />
                 </linearGradient>
               </defs>
               <g opacity="0.3">
-                <line x1="30" y1="20" x2="310" y2="20" stroke="#27282F" stroke-width="1" stroke-dasharray="3 3" />
-                <line x1="30" y1="55" x2="310" y2="55" stroke="#27282F" stroke-width="1" stroke-dasharray="3 3" />
-                <line x1="30" y1="90" x2="310" y2="90" stroke="#27282F" stroke-width="1" stroke-dasharray="3 3" />
+                <line x1="30" y1="20" x2="310" y2="20" stroke="var(--color-border-strong)" stroke-width="1" stroke-dasharray="3 3" />
+                <line x1="30" y1="55" x2="310" y2="55" stroke="var(--color-border-strong)" stroke-width="1" stroke-dasharray="3 3" />
+                <line x1="30" y1="90" x2="310" y2="90" stroke="var(--color-border-strong)" stroke-width="1" stroke-dasharray="3 3" />
               </g>
               <path
                 :d="'M ' + fansTrendData.days.map((d,i) => `${35 + i * 41.5},${115 - (d.value / fansTrendData.max) * 85}`).join(' L ') + ' L 35 + 6*41.5,115 L 35,115 Z'"
@@ -441,7 +441,7 @@ const goPath = (path: string) => router.push(path)
               <polyline
                 :points="fansTrendData.days.map((d,i) => `${35 + i * 41.5},${115 - (d.value / fansTrendData.max) * 85}`).join(' ')"
                 fill="none"
-                stroke="#5E6AD2"
+                stroke="var(--color-primary)"
                 stroke-width="2"
                 stroke-linejoin="round"
                 stroke-linecap="round"
@@ -453,12 +453,12 @@ const goPath = (path: string) => router.push(path)
                   :cx="35 + i * 41.5"
                   :cy="115 - (d.value / fansTrendData.max) * 85"
                   r="3.5"
-                  fill="#0D0E10"
-                  stroke="#5E6AD2"
+                  fill="var(--color-bg-card)"
+                  stroke="var(--color-primary)"
                   stroke-width="2"
                 />
               </g>
-              <g fill="#71717A" font-size="9" text-anchor="middle">
+              <g fill="var(--color-text-tertiary)" font-size="9" text-anchor="middle">
                 <text v-for="(d,i) in fansTrendData.days" :key="'l'+d.date" :x="35 + i * 41.5" y="132">{{ d.label }}</text>
               </g>
             </svg>
@@ -667,7 +667,7 @@ const goPath = (path: string) => router.push(path)
   transition: opacity 0.25s;
 }
 
-.overview-card:nth-child(1)::before { background: #5E6AD2; }
+.overview-card:nth-child(1)::before { background: var(--color-primary); }
 .overview-card:nth-child(2)::before { background: #FF9F0A; }
 .overview-card:nth-child(3)::before { background: #34C759; }
 .overview-card:nth-child(4)::before { background: #0A84FF; }
@@ -701,7 +701,7 @@ const goPath = (path: string) => router.push(path)
   flex-shrink: 0;
 }
 .ov-trend.up { background: rgba(52,199,89,0.10); color: #34C759; }
-.ov-trend.flat { background: rgba(94,106,210,0.10); color: #5E6AD2; }
+.ov-trend.flat { background: rgba(94,106,210,0.10); color: var(--color-primary); }
 
 /* 主体布局 */
 .main-layout {
@@ -862,7 +862,7 @@ const goPath = (path: string) => router.push(path)
 .meta-item.cat {
   padding: 1px 7px;
   background: rgba(94,106,210,0.10);
-  color: #5E6AD2;
+  color: var(--color-primary);
   border-radius: 4px;
 }
 .meta-item.pomo { color: #FF9F0A; }
@@ -957,7 +957,7 @@ const goPath = (path: string) => router.push(path)
   flex-shrink: 0;
 }
 .rl-item.done .rl-dot { background: #34C759; }
-.rl-item.pending .rl-dot { background: #A1A1AA; }
+.rl-item.pending .rl-dot { background: var(--color-text-secondary); }
 .rl-val {
   font-size: 16px;
   font-weight: 700;
@@ -999,7 +999,7 @@ const goPath = (path: string) => router.push(path)
   border-radius: 2px;
 }
 .fs-item.dy .fs-dot { background: #FF453A; }
-.fs-item.bili .fs-dot { background: #5E6AD2; }
+.fs-item.bili .fs-dot { background: var(--color-primary); }
 .fs-item.xhs .fs-dot { background: #FF69B4; }
 
 /* 收支卡片 */

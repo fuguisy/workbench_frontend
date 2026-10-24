@@ -18,14 +18,14 @@ const searchText = ref('')
 
 const categoryList = [
   { key: '提示词库', label: '提示词库', icon: BulbOutlined, color: '#FF9F0A', bg: 'rgba(255, 159, 10, 0.15)' },
-  { key: '模型管理', label: '模型管理', icon: RobotOutlined, color: '#5E6AD2', bg: 'rgba(94, 106, 210, 0.15)' },
+  { key: '模型管理', label: '模型管理', icon: RobotOutlined, color: 'var(--color-primary)', bg: 'rgba(94, 106, 210, 0.15)' },
   { key: 'SD绘图', label: 'SD绘图', icon: ExperimentOutlined, color: '#BF5AF2', bg: 'rgba(191, 90, 242, 0.15)' },
   { key: 'AI脚本', label: 'AI脚本', icon: ControlOutlined, color: '#0A84FF', bg: 'rgba(10, 132, 255, 0.15)' },
   { key: 'AI自动化', label: 'AI自动化', icon: ThunderboltOutlined, color: '#34C759', bg: 'rgba(52, 199, 89, 0.15)' }
 ]
 const tagList = ['GPT-4o', 'GPT-4', 'Claude 3', 'DeepSeek', 'Ollama', 'SDXL', 'Flux', '效果佳']
 const catColorMap: Record<string, string> = {
-  '提示词库': '#FF9F0A', '模型管理': '#5E6AD2', 'SD绘图': '#BF5AF2',
+  '提示词库': '#FF9F0A', '模型管理': 'var(--color-primary)', 'SD绘图': '#BF5AF2',
   'AI脚本': '#0A84FF', 'AI自动化': '#34C759'
 }
 const modelColorMap: Record<string, string> = {
@@ -135,7 +135,7 @@ const del = (r: AiLab) => Modal.confirm({
 <template>
   <div class="p">
     <a-row :gutter="16" class="srow">
-      <a-col :xs="24" :sm="8"><div class="sc" :style="{ '--a':'#5E6AD2','--as':'rgba(94,106,210,0.15)' }"><div class="si"><ExperimentOutlined /></div><div class="sif"><div class="sv">{{ stats.total }}<span class="su">条</span></div><div class="sl">AI实验总数</div></div></div></a-col>
+      <a-col :xs="24" :sm="8"><div class="sc" :style="{ '--a':'var(--color-primary)','--as':'rgba(94,106,210,0.15)' }"><div class="si"><ExperimentOutlined /></div><div class="sif"><div class="sv">{{ stats.total }}<span class="su">条</span></div><div class="sl">AI实验总数</div></div></div></a-col>
       <a-col :xs="24" :sm="8"><div class="sc" :style="{ '--a':'#34C759','--as':'rgba(52,199,89,0.15)' }"><div class="si"><RiseOutlined /></div><div class="sif"><div class="sv">{{ stats.monthNew }}<span class="su">条</span></div><div class="sl">本月新增</div></div></div></a-col>
       <a-col :xs="24" :sm="8"><div class="sc" :style="{ '--a':'#FF9F0A','--as':'rgba(255,159,10,0.15)' }"><div class="si"><AuditOutlined /></div><div class="sif"><div class="sv">{{ stats.categorized }}<span class="su">条</span></div><div class="sl">已分类</div></div></div></a-col>
     </a-row>
@@ -147,8 +147,8 @@ const del = (r: AiLab) => Modal.confirm({
         <div class="cl">{{ c.label }}</div>
       </div>
     </div>
-    <div class="st"><span class="stt"><ExperimentOutlined style="color:#5E6AD2;margin-right:6px" />{{ selectedCategory || '全部实验' }} <span class="scu">({{ sorted.length }})</span></span>
-      <a-input v-model:value="searchText" placeholder="搜索标题/模型" allow-clear size="small" style="width:220px"><template #prefix><SearchOutlined style="color:#71717A" /></template></a-input>
+    <div class="st"><span class="stt"><ExperimentOutlined style="color:var(--color-primary);margin-right:6px" />{{ selectedCategory || '全部实验' }} <span class="scu">({{ sorted.length }})</span></span>
+      <a-input v-model:value="searchText" placeholder="搜索标题/模型" allow-clear size="small" style="width:220px"><template #prefix><SearchOutlined style="color:var(--color-text-tertiary)" /></template></a-input>
     </div>
     <div class="tr">
       <div v-for="t in tagList" :key="t" class="tc" :class="{ active: selectedTag === t }" @click="selectedTag = selectedTag === t ? null : t">{{ t }}</div>

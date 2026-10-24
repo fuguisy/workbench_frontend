@@ -401,8 +401,8 @@ onMounted(() => {
           >
             <defs>
               <linearGradient id="grid-line" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stop-color="#27282F" stop-opacity="0.4" />
-                <stop offset="100%" stop-color="#27282F" stop-opacity="0.05" />
+                <stop offset="0%" stop-color="var(--color-border-strong)" stop-opacity="0.4" />
+                <stop offset="100%" stop-color="var(--color-border-strong)" stop-opacity="0.05" />
               </linearGradient>
               <linearGradient id="dy-bar" x1="0" y1="1" x2="0" y2="0">
                 <stop offset="0%" stop-color="#FF453A" stop-opacity="0.6" />
@@ -427,7 +427,7 @@ onMounted(() => {
             </g>
 
             <!-- Y轴标签 -->
-            <g fill="#71717A" font-size="10" text-anchor="end">
+            <g fill="var(--color-text-tertiary)" font-size="10" text-anchor="end">
               <text x="50" y="33">{{ maxValue }}</text>
               <text x="50" y="83">{{ Math.round(maxValue * 0.75) }}</text>
               <text x="50" y="133">{{ Math.round(maxValue * 0.5) }}</text>
@@ -481,7 +481,7 @@ onMounted(() => {
                   x="34"
                   :y="210 - Math.max(d.platform['抖音'], d.platform['B站'], d.platform['小红书']) / maxValue * 180 - 6"
                   text-anchor="middle"
-                  fill="#FAFAFA"
+                  fill="var(--color-text)"
                   font-size="10"
                   font-weight="600"
                 >
@@ -489,7 +489,7 @@ onMounted(() => {
                 </text>
 
                 <!-- X轴标签 -->
-                <text x="34" y="235" text-anchor="middle" fill="#A1A1AA" font-size="10">
+                <text x="34" y="235" text-anchor="middle" fill="var(--color-text-secondary)" font-size="10">
                   {{ d.label }}
                 </text>
                 <text
@@ -497,7 +497,7 @@ onMounted(() => {
                   y="248"
                   text-anchor="middle"
                   font-size="9"
-                  :fill="dayjs(d.date).isSame(dayjs(), 'day') ? '#5E6AD2' : '#52525B'"
+                  :fill="dayjs(d.date).isSame(dayjs(), 'day') ? 'var(--color-primary)' : 'var(--color-text-disabled)'"
                 >
                   {{ ['日','一','二','三','四','五','六'][dayjs(d.date).day()] }}
                   <tspan v-if="dayjs(d.date).isSame(dayjs(), 'day')"> · 今天</tspan>
@@ -513,7 +513,7 @@ onMounted(() => {
         <div class="card-header">
           <div>
             <div class="card-title">
-              <SendOutlined style="color:#5E6AD2" /> 发布队列
+              <SendOutlined style="color:var(--color-primary)" /> 发布队列
             </div>
             <div class="card-sub">待发布 · 共 {{ queueList.length }} 条</div>
           </div>

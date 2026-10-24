@@ -19,14 +19,21 @@ import {
   RocketOutlined,
   LinkOutlined,
   SwapOutlined,
-  DatabaseOutlined
+  DatabaseOutlined,
+  TeamOutlined,
+  MenuOutlined,
+  ApartmentOutlined,
+  SafetyCertificateOutlined
 } from '@ant-design/icons-vue'
 import * as apis from '@/api/modules'
 import * as feishuApi from '@/api/feishu'
 import type { FieldSchema } from '@/api/feishu'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
+import { useMenuStore } from '@/stores/menu'
 import { userApi, type SysUserVO } from '@/api/user'
+import { ICON_NAMES, resolveMenuIcon } from '@/utils/menuIcon'
+import { useRoleMenu } from './useRoleMenu'
 export type { FieldSchema }
 
 const appStore = useAppStore()
@@ -148,20 +155,28 @@ const exportMarkdown = async () => {
 }
 
 // ============= 4. 菜单与显示 =============
-const menuConfig = reactive({
-  showDev: localStorage.getItem('wb-menu-dev') !== 'false',
-  showMedia: localStorage.getItem('wb-menu-media') !== 'false',
-  showPersonal: localStorage.getItem('wb-menu-personal') !== 'false',
-  showSystem: localStorage.getItem('wb-menu-system') !== 'false'
-})
+// 分组与条目来自数据库（/sys/menu/my）；此处只维护「我自己想隐藏哪些分组」的个人偏好，
+// 存在 localStorage 里，只影响自己的侧边栏，不影响他人与角色授权。
+const menuStore = useMenuStore()
+const menuIconNames = ICON_NAMES
+const iconPreview = computed(() => resolveMenuIcon(menuForm.icon))
 
-const saveMenuConfig = () => {
-  localStorage.setItem('wb-menu-dev', String(menuConfig.showDev))
-  localStorage.setItem('wb-menu-media', String(menuConfig.showMedia))
-  localStorage.setItem('wb-menu-personal', String(menuConfig.showPersonal))
-  localStorage.setItem('wb-menu-system', String(menuConfig.showSystem))
-  message.success('菜单显示配置已保存，刷新页面生效')
+const resetMenuDisplay = () => {
+  menuStore.groups.forEach((g) => menuStore.setGroupVisible(g.id, true))
+  message.success('已恢复为显示全部分组')
 }
+
+// ============= 8/9. 角色与授权、菜单管理（仅管理员） =============
+const {
+  menuTypeLabel,
+  roleLoading, roleList, roleColumns, loadRoles,
+  roleModalOpen, roleSubmitting, roleForm, roleEditing, roleIsBuiltinAdmin,
+  openRoleModal, submitRole, toggleRoleStatus, removeRole,
+  grantOpen, grantSubmitting, grantRole, grantChecked, grantTreeData, openGrant, submitGrant,
+  menuLoading, menuFlat, menuTreeData, expandedKeys, menuColumns, loadMenus,
+  menuModalOpen, menuSubmitting, menuForm, menuEditing, parentOptions,
+  openMenuModal, onMenuTypeChange, submitMenu, removeMenu
+} = useRoleMenu()
 
 // ============= 5. 归档/清理规则 =============
 const archiveForm = reactive({
@@ -192,6 +207,8 @@ const runClean = () => {
 const storageInfo = reactive({ used: 1.25, total: 1024, records: 0 })
 
 onMounted(async () => {
+  // 「菜单与显示」需要分组列表：侧边栏未加载时这里补一次
+  menuStore.load()
   // 模拟统计所有模块数据量
   let total = 0
   const moduleApis = [
@@ -903,7 +920,11 @@ const removeUser = (row: SysUserVO) => {
 watch(
   isAdmin,
   (v) => {
-    if (v) loadUsers()
+    if (v) {
+      loadUsers()
+      loadRoles()
+      loadMenus()
+    }
   },
   { immediate: true }
 )
@@ -1031,37 +1052,42 @@ watch(
       <a-tab-pane key="menu">
         <template #tab><OrderedListOutlined /> 菜单与显示</template>
         <a-card class="setting-card" :bordered="false">
-          <p class="section-desc">根据个人习惯隐藏不常用的侧边栏分组；隐藏后对应页面仍可通过地址栏直接访问。工作台和效率分组始终显示。</p>
+          <a-alert
+            v-if="menuStore.source === 'local'"
+            type="warning"
+            show-icon
+            message="菜单接口不可用，当前展示的是内置兜底菜单"
+            description="后端 /sys/menu/my 未返回数据（可能未登录、数据库未初始化或角色被停用）。恢复后刷新页面即可加载数据库中的菜单。"
+            style="margin-bottom: 16px"
+          />
+          <p class="section-desc">
+            菜单来自数据库，此处只控制「自己的侧边栏要不要显示这个分组」，不影响别人的视图，也不影响角色授权。
+            隐藏后对应页面仍可通过地址栏直接访问。含首页的分组不允许隐藏，避免侧边栏被清空后找不到回设置页的入口。
+          </p>
           <a-form layout="vertical">
             <a-row :gutter="16">
-              <a-col :xs="24" :md="12">
+              <a-col v-for="g in menuStore.groups" :key="g.id" :xs="24" :md="12">
                 <a-form-item>
-                  <a-switch v-model:checked="menuConfig.showDev" checked-children="显示" un-checked-children="隐藏" />
-                  <span class="switch-label">💻 程序员分组（代码仓库 / AI实验室 / 命令面板）</span>
-                </a-form-item>
-              </a-col>
-              <a-col :xs="24" :md="12">
-                <a-form-item>
-                  <a-switch v-model:checked="menuConfig.showMedia" checked-children="显示" un-checked-children="隐藏" />
-                  <span class="switch-label">🎬 自媒体分组（自媒体看板 / 素材库 / 创作稿件库）</span>
-                </a-form-item>
-              </a-col>
-              <a-col :xs="24" :md="12">
-                <a-form-item>
-                  <a-switch v-model:checked="menuConfig.showPersonal" checked-children="显示" un-checked-children="隐藏" />
-                  <span class="switch-label">📚 知识与个人分组（知识库 / 习惯打卡 / 收支记账 / 订阅账单）</span>
-                </a-form-item>
-              </a-col>
-              <a-col :xs="24" :md="12">
-                <a-form-item>
-                  <a-switch v-model:checked="menuConfig.showSystem" checked-children="显示" un-checked-children="隐藏" />
-                  <span class="switch-label">⚙️ 系统分组（密码管理 / 文件备份 / 洞察复盘 / 工作台设置）</span>
+                  <a-switch
+                    :checked="menuStore.isGroupVisible(g.id)"
+                    :disabled="g.id === menuStore.pinnedGroupId"
+                    checked-children="显示"
+                    un-checked-children="隐藏"
+                    @change="(v: any) => menuStore.setGroupVisible(g.id, !!v)"
+                  />
+                  <span class="switch-label">{{ g.label }}（{{ g.items.length }} 项）</span>
                 </a-form-item>
               </a-col>
             </a-row>
           </a-form>
           <a-divider />
-          <a-button type="primary" @click="saveMenuConfig"><SaveOutlined /> 保存显示配置</a-button>
+          <a-space wrap>
+            <a-button @click="resetMenuDisplay"><ReloadOutlined /> 全部显示</a-button>
+            <a-button @click="menuStore.load(true)">从数据库重新加载</a-button>
+          </a-space>
+          <p class="section-desc" style="margin-top:12px">
+            想调整分组名称、增删菜单或控制谁能看到？请到「角色与授权」与「菜单管理」标签页（仅管理员可见）。
+          </p>
         </a-card>
       </a-tab-pane>
 
@@ -1355,6 +1381,329 @@ watch(
           </a-form>
         </a-modal>
       </a-tab-pane>
+
+      <!-- 9. 角色与授权（仅管理员可见） -->
+      <a-tab-pane v-if="isAdmin" key="roles">
+        <template #tab><TeamOutlined /> 角色与授权</template>
+        <a-card class="setting-card" :bordered="false">
+          <a-alert
+            type="info"
+            show-icon
+            message="角色与授权已落库"
+            description="角色的菜单可见范围由「角色-菜单」授权决定，保存在 sys_role_menu 表中。一个账号只对应一个角色（sys_user.role 存角色标识）。内置 admin 角色不参与授权限制，永远拥有全部菜单，避免误操作把自己锁在门外。"
+            style="margin-bottom: 16px"
+          />
+          <a-space style="margin-bottom: 12px" wrap>
+            <a-button @click="loadRoles"><ReloadOutlined /> 刷新</a-button>
+            <a-button type="primary" @click="openRoleModal()"><PlusOutlined /> 新增角色</a-button>
+          </a-space>
+          <a-table
+            :columns="roleColumns"
+            :data-source="roleList"
+            :loading="roleLoading"
+            row-key="id"
+            size="middle"
+            :pagination="false"
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.dataIndex === 'roleKey'">
+                <a-tag :color="record.roleKey === 'admin' ? 'gold' : 'blue'">{{ record.roleKey }}</a-tag>
+              </template>
+              <template v-else-if="column.dataIndex === 'description'">
+                {{ record.description || '-' }}
+              </template>
+              <template v-else-if="column.dataIndex === 'userCount'">
+                {{ record.userCount }} 人
+              </template>
+              <template v-else-if="column.dataIndex === 'status'">
+                <a-tag :color="record.status === 1 ? 'green' : 'red'">
+                  {{ record.status === 1 ? '启用' : '停用' }}
+                </a-tag>
+              </template>
+              <template v-else-if="column.key === 'action'">
+                <a-space>
+                  <a-button size="small" @click="openRoleModal(record)">编辑</a-button>
+                  <a-button
+                    size="small"
+                    type="primary"
+                    ghost
+                    :disabled="record.roleKey === 'admin'"
+                    @click="openGrant(record)"
+                  >
+                    授权
+                  </a-button>
+                  <a-button
+                    size="small"
+                    :disabled="record.roleKey === 'admin'"
+                    @click="toggleRoleStatus(record)"
+                  >
+                    {{ record.status === 1 ? '停用' : '启用' }}
+                  </a-button>
+                  <a-button
+                    size="small"
+                    danger
+                    :disabled="record.roleKey === 'admin'"
+                    @click="removeRole(record)"
+                  >
+                    删除
+                  </a-button>
+                </a-space>
+              </template>
+            </template>
+          </a-table>
+        </a-card>
+
+        <a-modal
+          v-model:open="roleModalOpen"
+          :title="roleEditing ? '编辑角色' : '新增角色'"
+          ok-text="保存"
+          cancel-text="取消"
+          :confirm-loading="roleSubmitting"
+          :destroyOnClose="true"
+          @ok="submitRole"
+        >
+          <a-form layout="vertical">
+            <a-form-item label="角色标识" required>
+              <a-input
+                v-model:value="roleForm.roleKey"
+                :disabled="roleIsBuiltinAdmin"
+                placeholder="小写字母开头，可含数字与下划线，如 editor"
+              />
+            </a-form-item>
+            <a-form-item label="角色名称" required>
+              <a-input v-model:value="roleForm.roleName" placeholder="如：内容编辑" />
+            </a-form-item>
+            <a-form-item label="说明">
+              <a-input v-model:value="roleForm.description" placeholder="这个角色能看到什么，写清楚方便日后维护" />
+            </a-form-item>
+            <a-row :gutter="16">
+              <a-col :span="12">
+                <a-form-item label="状态">
+                  <a-switch
+                    :checked="roleForm.status === 1"
+                    :disabled="roleIsBuiltinAdmin"
+                    checked-children="启用"
+                    un-checked-children="停用"
+                    @change="(v: any) => (roleForm.status = v ? 1 : 0)"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="12">
+                <a-form-item label="排序">
+                  <a-input-number v-model:value="roleForm.sort" :min="0" style="width:100%" />
+                </a-form-item>
+              </a-col>
+            </a-row>
+            <a-alert v-if="roleIsBuiltinAdmin" type="warning" show-icon message="内置管理员角色的标识与状态不允许修改" />
+          </a-form>
+        </a-modal>
+
+        <a-modal
+          v-model:open="grantOpen"
+          :title="`菜单授权 - ${grantRole?.roleName || ''}`"
+          ok-text="保存授权"
+          cancel-text="取消"
+          :width="560"
+          :confirm-loading="grantSubmitting"
+          :destroyOnClose="true"
+          @ok="submitGrant"
+        >
+          <a-alert
+            type="info"
+            show-icon
+            message="勾选该角色可见的菜单"
+            description="未勾选的菜单不会出现在该角色账号的侧边栏，接口也不再下发。父分组会自动补齐；保存后相关账号重新登录即生效。"
+            style="margin-bottom: 12px"
+          />
+          <div class="grant-tree-wrap">
+            <a-tree
+              v-model:checkedKeys="grantChecked"
+              :tree-data="grantTreeData"
+              checkable
+              default-expand-all
+              :selectable="false"
+            />
+          </div>
+        </a-modal>
+      </a-tab-pane>
+
+      <!-- 10. 菜单管理（仅管理员可见） -->
+      <a-tab-pane v-if="isAdmin" key="menus">
+        <template #tab><ApartmentOutlined /> 菜单管理</template>
+        <a-card class="setting-card" :bordered="false">
+          <a-alert
+            type="info"
+            show-icon
+            message="菜单树已落库（sys_menu）"
+            description="分组目录（DIR）对应侧边栏大标题；页面菜单（MENU）对应一条前端路由，路径必须以 / 开头；前端动作（ACTION）路径以 cmd: 开头，点击时派发前端事件；能力位（BUTTON）不进侧边栏，只提供权限码供后端接口鉴权。"
+            style="margin-bottom: 16px"
+          />
+          <a-space style="margin-bottom: 12px" wrap>
+            <a-button @click="loadMenus"><ReloadOutlined /> 刷新</a-button>
+            <a-button type="primary" @click="openMenuModal(undefined, { menuType: 'DIR' })">
+              <PlusOutlined /> 新增分组
+            </a-button>
+            <a-button @click="openMenuModal(undefined, { menuType: 'MENU' })">
+              <PlusOutlined /> 新增页面菜单
+            </a-button>
+            <a-button @click="openMenuModal(undefined, { menuType: 'BUTTON' })">
+              <PlusOutlined /> 新增能力位
+            </a-button>
+          </a-space>
+          <a-table
+            :columns="menuColumns"
+            :data-source="menuTreeData"
+            :loading="menuLoading"
+            row-key="id"
+            size="middle"
+            :pagination="false"
+            default-expand-all-rows
+            :scroll="{ x: 1100 }"
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.dataIndex === 'name'">
+                <span class="menu-name">{{ record.name }}</span>
+              </template>
+              <template v-else-if="column.dataIndex === 'menuType'">
+                <a-tag :color="record.menuType === 'DIR' ? 'purple' : record.menuType === 'MENU' ? 'blue' : record.menuType === 'ACTION' ? 'cyan' : 'default'">
+                  {{ menuTypeLabel(record.menuType) }}
+                </a-tag>
+              </template>
+              <template v-else-if="column.dataIndex === 'path'">
+                <code v-if="record.path">{{ record.path }}</code>
+                <span v-else>-</span>
+              </template>
+              <template v-else-if="column.dataIndex === 'permission'">
+                <code v-if="record.permission">{{ record.permission }}</code>
+                <span v-else>-</span>
+              </template>
+              <template v-else-if="column.dataIndex === 'visible'">
+                <a-tag :color="record.visible === 1 ? 'green' : 'default'">
+                  {{ record.visible === 1 ? '显示' : '隐藏' }}
+                </a-tag>
+              </template>
+              <template v-else-if="column.dataIndex === 'status'">
+                <a-tag :color="record.status === 1 ? 'green' : 'red'">
+                  {{ record.status === 1 ? '启用' : '停用' }}
+                </a-tag>
+              </template>
+              <template v-else-if="column.key === 'action'">
+                <a-space>
+                  <a-button size="small" @click="openMenuModal(record)">编辑</a-button>
+                  <a-button
+                    size="small"
+                    @click="openMenuModal(undefined, { parentId: record.id, menuType: record.menuType === 'DIR' ? 'MENU' : 'BUTTON' })"
+                  >
+                    加子项
+                  </a-button>
+                  <a-button size="small" danger @click="removeMenu(record)">删除</a-button>
+                </a-space>
+              </template>
+            </template>
+          </a-table>
+        </a-card>
+
+        <a-modal
+          v-model:open="menuModalOpen"
+          :title="menuEditing ? '编辑菜单' : '新增菜单'"
+          ok-text="保存"
+          cancel-text="取消"
+          :width="620"
+          :confirm-loading="menuSubmitting"
+          :destroyOnClose="true"
+          @ok="submitMenu"
+        >
+          <a-form layout="vertical">
+            <a-row :gutter="16">
+              <a-col :span="12">
+                <a-form-item label="类型" required>
+                  <a-select v-model:value="menuForm.menuType" @change="onMenuTypeChange">
+                    <a-select-option value="DIR">分组目录（侧边栏大标题）</a-select-option>
+                    <a-select-option value="MENU">页面菜单（对应前端路由）</a-select-option>
+                    <a-select-option value="ACTION">前端动作（cmd: 前缀）</a-select-option>
+                    <a-select-option value="BUTTON">能力位（仅权限码）</a-select-option>
+                  </a-select>
+                </a-form-item>
+              </a-col>
+              <a-col :span="12">
+                <a-form-item label="上级">
+                  <a-select
+                    v-model:value="menuForm.parentId"
+                    :disabled="menuForm.menuType === 'DIR'"
+                    :options="parentOptions"
+                    placeholder="选择上级分组"
+                  />
+                </a-form-item>
+              </a-col>
+            </a-row>
+            <a-form-item label="名称" required>
+              <a-input v-model:value="menuForm.name" placeholder="显示在侧边栏或授权树中的名字" />
+            </a-form-item>
+            <a-row :gutter="16">
+              <a-col :span="12">
+                <a-form-item label="路径">
+                  <a-input
+                    v-model:value="menuForm.path"
+                    :disabled="menuForm.menuType === 'DIR' || menuForm.menuType === 'BUTTON'"
+                    :placeholder="menuForm.menuType === 'ACTION' ? 'cmd:palette' : '/example'"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="12">
+                <a-form-item label="权限码">
+                  <a-input v-model:value="menuForm.permission" placeholder="如 system:secrets、sys:user:manage" />
+                </a-form-item>
+              </a-col>
+            </a-row>
+            <a-row :gutter="16">
+              <a-col :span="12">
+                <a-form-item label="图标">
+                  <a-select
+                    v-model:value="menuForm.icon"
+                    allow-clear
+                    :disabled="menuForm.menuType === 'DIR' || menuForm.menuType === 'BUTTON'"
+                    placeholder="Ant Design 图标名"
+                  >
+                    <a-select-option v-for="n in menuIconNames" :key="n" :value="n">{{ n }}</a-select-option>
+                  </a-select>
+                </a-form-item>
+              </a-col>
+              <a-col :span="12">
+                <a-form-item label="图标预览">
+                  <span class="icon-preview"><component :is="iconPreview" /></span>
+                </a-form-item>
+              </a-col>
+            </a-row>
+            <a-row :gutter="16">
+              <a-col :span="8">
+                <a-form-item label="排序">
+                  <a-input-number v-model:value="menuForm.sort" :min="0" style="width:100%" />
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
+                <a-form-item label="侧边栏显示">
+                  <a-switch
+                    :checked="menuForm.visible === 1"
+                    checked-children="显示"
+                    un-checked-children="隐藏"
+                    @change="(v: any) => (menuForm.visible = v ? 1 : 0)"
+                  />
+                </a-form-item>
+              </a-col>
+              <a-col :span="8">
+                <a-form-item label="状态">
+                  <a-switch
+                    :checked="menuForm.status === 1"
+                    checked-children="启用"
+                    un-checked-children="停用"
+                    @change="(v: any) => (menuForm.status = v ? 1 : 0)"
+                  />
+                </a-form-item>
+              </a-col>
+            </a-row>
+          </a-form>
+        </a-modal>
+      </a-tab-pane>
     </a-tabs>
   </div>
 </template>
@@ -1404,6 +1753,28 @@ watch(
 }
 
 .switch-label { margin-left: 10px; font-size: 14px; color: var(--color-text, rgba(0,0,0,0.85)); }
+
+/* 角色授权树：限高滚动，避免菜单变多后弹窗被撑爆 */
+.grant-tree-wrap {
+  max-height: 52vh;
+  overflow: auto;
+  padding: 8px 4px;
+  border: 1px solid var(--color-border, rgba(0,0,0,0.06));
+  border-radius: 8px;
+  background: var(--color-bg-card-2, rgba(0,0,0,0.02));
+}
+.icon-preview {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  font-size: 18px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border, rgba(0,0,0,0.06));
+  color: var(--color-text, rgba(0,0,0,0.85));
+}
+.menu-name { color: var(--color-text, rgba(0,0,0,0.85)); }
 .import-block { background: var(--color-bg-soft, #fafafa); padding: 16px; border-radius: 8px; }
 
 .storage-bar-wrap { margin-top: 8px; }

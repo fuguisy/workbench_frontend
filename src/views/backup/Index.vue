@@ -28,7 +28,7 @@ type BackupStatus = 'success' | 'running' | 'pending' | 'failed'
 const CATEGORY_COLOR: Record<string, string> = {
   '代码快照': '#0A84FF',
   '素材备份': '#BF5AF2',
-  '模型文件': '#5E6AD2',
+  '模型文件': 'var(--color-primary)',
   '数据库': '#FF9F0A',
   '全量快照': '#34C759'
 }
@@ -86,7 +86,7 @@ const inferStatus = (b: BackupLog): BackupStatus => {
 const getStatusMeta = (s: BackupStatus) => {
   const map: Record<BackupStatus, { label: string; color: string; bg: string; icon: any }> = {
     success: { label: '成功', color: '#34C759', bg: 'rgba(52,199,89,0.12)', icon: CheckCircleOutlined },
-    running: { label: '运行中', color: '#5E6AD2', bg: 'rgba(94,106,210,0.12)', icon: SyncOutlined },
+    running: { label: '运行中', color: 'var(--color-primary)', bg: 'rgba(94,106,210,0.12)', icon: SyncOutlined },
     pending: { label: '待执行', color: '#FF9F0A', bg: 'rgba(255,159,10,0.12)', icon: ClockCircleOutlined },
     failed: { label: '失败', color: '#FF453A', bg: 'rgba(255,69,58,0.12)', icon: WarningOutlined }
   }
@@ -315,7 +315,7 @@ onMounted(() => {
         <div class="stat-label">已备份总大小</div>
         <div class="progress-mini">
           <div class="progress-track">
-            <div class="progress-fill" style="width: 68%; background: linear-gradient(90deg, #0A84FF, #5E6AD2)"></div>
+            <div class="progress-fill" style="width: 68%; background: linear-gradient(90deg, #0A84FF, var(--color-primary))"></div>
           </div>
           <div class="progress-label">
             <span>68%</span>
@@ -340,14 +340,14 @@ onMounted(() => {
 
       <div class="stat-card">
         <div class="stat-header">
-          <div class="stat-icon" style="background: rgba(94,106,210,0.12); color:#5E6AD2">
+          <div class="stat-icon" style="background: rgba(94,106,210,0.12); color:var(--color-primary)">
             <EnvironmentOutlined />
           </div>
         </div>
-        <div class="stat-value" style="color:#5E6AD2">{{ stats.remoteCoverage }}</div>
+        <div class="stat-value" style="color:var(--color-primary)">{{ stats.remoteCoverage }}</div>
         <div class="stat-label">异地备份覆盖</div>
         <div class="stat-sub">
-          <span class="dot" style="background:#5E6AD2"></span>
+          <span class="dot" style="background:var(--color-primary)"></span>
           {{ stats.remoteCount }} 条异地 · 建议 3-2-1 策略
         </div>
       </div>
@@ -416,7 +416,7 @@ onMounted(() => {
                   </span>
                 </div>
                 <div class="item-meta-row">
-                  <span class="meta-item" :style="{ color: DEST_COLOR[b.destination || ''] || '#A1A1AA' }">
+                  <span class="meta-item" :style="{ color: DEST_COLOR[b.destination || ''] || 'var(--color-text-secondary)' }">
                     <EnvironmentOutlined /> {{ b.destination || '未指定' }}
                   </span>
                   <span class="meta-item">
@@ -445,7 +445,7 @@ onMounted(() => {
                     background: inferStatus(b) === 'failed'
                       ? 'linear-gradient(90deg, #FF453A, #FF6B6B)'
                       : inferStatus(b) === 'running'
-                        ? 'linear-gradient(90deg, #5E6AD2, #7A85E0)'
+                        ? 'linear-gradient(90deg, var(--color-primary), #7A85E0)'
                         : inferStatus(b) === 'pending'
                           ? 'linear-gradient(90deg, #FF9F0A, #FFB74D)'
                           : 'linear-gradient(90deg, #34C759, #30D158)'

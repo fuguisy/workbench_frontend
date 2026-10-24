@@ -212,7 +212,7 @@ const totalByCategory = computed(() => {
           allow-clear
           size="small"
         >
-          <template #prefix><SearchOutlined style="color:#71717A" /></template>
+          <template #prefix><SearchOutlined style="color:var(--color-text-tertiary)" /></template>
         </a-input>
       </div>
       <div class="sider-list">

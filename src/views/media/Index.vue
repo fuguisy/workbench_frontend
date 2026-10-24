@@ -148,7 +148,7 @@ const del = (r: Media) => Modal.confirm({
       </div>
     </div>
     <div class="st"><span class="stt"><PictureOutlined style="color:#BF5AF2;margin-right:6px" />{{ selectedCategory || '全部素材' }} <span class="scu">({{ sorted.length }})</span></span>
-      <a-input v-model:value="searchText" placeholder="搜索素材/备注" allow-clear size="small" style="width:220px"><template #prefix><SearchOutlined style="color:#71717A" /></template></a-input>
+      <a-input v-model:value="searchText" placeholder="搜索素材/备注" allow-clear size="small" style="width:220px"><template #prefix><SearchOutlined style="color:var(--color-text-tertiary)" /></template></a-input>
     </div>
     <div class="tr">
       <div v-for="t in tagList" :key="t" class="tc" :class="{ active: selectedTag === t }" @click="selectedTag = selectedTag === t ? null : t">{{ t }}</div>

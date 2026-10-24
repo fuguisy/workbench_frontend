@@ -115,7 +115,7 @@ const selectedTag = ref<string | null>(null)
 const searchText = ref('')
 
 const categoryList = [
-  { key: '工作会议', label: '工作/会议', icon: CalendarOutlined, color: '#5E6AD2', bg: 'rgba(94, 106, 210, 0.15)' },
+  { key: '工作会议', label: '工作/会议', icon: CalendarOutlined, color: 'var(--color-primary)', bg: 'rgba(94, 106, 210, 0.15)' },
   { key: '自媒体事务', label: '自媒体/内容', icon: BellOutlined, color: '#FF375F', bg: 'rgba(255, 55, 95, 0.15)' },
   { key: '专注时间', label: '专注/深度', icon: CheckCircleOutlined, color: '#0A84FF', bg: 'rgba(10, 132, 255, 0.15)' },
   { key: '个人规划', label: '复盘/规划', icon: AuditOutlined, color: '#34C759', bg: 'rgba(52, 199, 89, 0.15)' },
@@ -123,12 +123,12 @@ const categoryList = [
 ]
 const tagList = ['今日', '本周', '高优先级', '全天事件', '待开始', '进行中', '已完成', '已过期']
 const catColorMap: Record<string, string> = {
-  '工作会议': '#5E6AD2', '自媒体事务': '#FF375F', '专注时间': '#0A84FF',
+  '工作会议': 'var(--color-primary)', '自媒体事务': '#FF375F', '专注时间': '#0A84FF',
   '个人规划': '#34C759', '生活事务': '#FF9F0A', '健康生活': '#00D4AA'
 }
 const priorityColorMap: Record<string, string> = { '高': '#FF375F', '中': '#FF9F0A', '低': '#8E8E93' }
 const statusColorMap: Record<string, string> = {
-  '待开始': '#5E6AD2', '进行中': '#34C759', '已完成': '#00D4AA', '已取消': '#8E8E93', '已过期': '#FF375F'
+  '待开始': 'var(--color-primary)', '进行中': '#34C759', '已完成': '#00D4AA', '已取消': '#8E8E93', '已过期': '#FF375F'
 }
 
 const stats = computed(() => {
@@ -243,7 +243,7 @@ const del = (r: CalendarItem) => Modal.confirm({
 <template>
   <div class="p">
     <a-row :gutter="16" class="srow">
-      <a-col :xs="24" :sm="8"><div class="sc" :style="{ '--a':'#5E6AD2','--as':'rgba(94,106,210,0.15)' }"><div class="si"><CalendarOutlined /></div><div class="sif"><div class="sv">{{ stats.today }}<span class="su">项</span></div><div class="sl">今日日程</div></div></div></a-col>
+      <a-col :xs="24" :sm="8"><div class="sc" :style="{ '--a':'var(--color-primary)','--as':'rgba(94,106,210,0.15)' }"><div class="si"><CalendarOutlined /></div><div class="sif"><div class="sv">{{ stats.today }}<span class="su">项</span></div><div class="sl">今日日程</div></div></div></a-col>
       <a-col :xs="24" :sm="8"><div class="sc" :style="{ '--a':'#34C759','--as':'rgba(52,199,89,0.15)' }"><div class="si"><RiseOutlined /></div><div class="sif"><div class="sv">{{ stats.week }}<span class="su">项</span></div><div class="sl">本周日程</div></div></div></a-col>
       <a-col :xs="24" :sm="8"><div class="sc" :style="{ '--a':'#FF375F','--as':'rgba(255,55,95,0.15)' }"><div class="si"><BellOutlined /></div><div class="sif"><div class="sv">{{ stats.high }}<span class="su">项</span></div><div class="sl">高优先级</div></div></div></a-col>
     </a-row>
@@ -255,8 +255,8 @@ const del = (r: CalendarItem) => Modal.confirm({
         <div class="cl">{{ c.label }}</div>
       </div>
     </div>
-    <div class="st"><span class="stt"><CalendarOutlined style="color:#5E6AD2;margin-right:6px" />{{ selectedCategory || '全部日程' }} <span class="scu">({{ sorted.length }})</span></span>
-      <a-input v-model:value="searchText" placeholder="搜索日程/地点/参与人" allow-clear size="small" style="width:220px"><template #prefix><SearchOutlined style="color:#71717A" /></template></a-input>
+    <div class="st"><span class="stt"><CalendarOutlined style="color:var(--color-primary);margin-right:6px" />{{ selectedCategory || '全部日程' }} <span class="scu">({{ sorted.length }})</span></span>
+      <a-input v-model:value="searchText" placeholder="搜索日程/地点/参与人" allow-clear size="small" style="width:220px"><template #prefix><SearchOutlined style="color:var(--color-text-tertiary)" /></template></a-input>
     </div>
     <div class="tr">
       <div v-for="t in tagList" :key="t" class="tc" :class="{ active: selectedTag === t }" @click="selectedTag = selectedTag === t ? null : t">{{ t }}</div>
@@ -272,7 +272,7 @@ const del = (r: CalendarItem) => Modal.confirm({
             </div>
             <div class="na">{{ getAbstract(r) }}</div>
             <div class="nme">
-              <span class="mi mt" style="background:rgba(94,106,210,0.15);color:#5E6AD2"><ClockCircleOutlined /> {{ formatDate(r) }}</span>
+              <span class="mi mt" style="background:rgba(94,106,210,0.15);color:var(--color-primary)"><ClockCircleOutlined /> {{ formatDate(r) }}</span>
               <span v-if="r.location" class="mi"><EnvironmentOutlined /> {{ r.location }}</span>
               <span v-if="r.attendees && r.attendees !== '自己'" class="mi"><UserOutlined /> {{ r.attendees }}</span>
             </div>
